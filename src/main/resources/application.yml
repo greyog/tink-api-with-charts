@@ -1,0 +1,7 @@
+spring:
+  application:
+    name: tink-api-with-charts
+trading:
+  bot:
+    lots: 2
+    balance: 1_000_000
