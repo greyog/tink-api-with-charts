@@ -2,6 +2,7 @@ package com.github.tink_api_with_charts.component;
 
 import com.github.tink_api_with_charts.cinfiguration.TradingProperties;
 import jakarta.annotation.PostConstruct;
+import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -44,6 +45,7 @@ public class FindInstrument {
     private final SyncStubWrapper<InstrumentsServiceGrpc.InstrumentsServiceBlockingStub> instrumentsService;
     private final SyncStubWrapper<OrdersServiceGrpc.OrdersServiceBlockingStub> ordersService;
     private final SyncStubWrapper<SandboxServiceGrpc.SandboxServiceBlockingStub> sandboxService;
+    @Getter
     private String tradingAccountId;
 
     public FindInstrument(
@@ -108,4 +110,5 @@ public class FindInstrument {
             log.info("Баланс песочницы пополнен на сумму: {} руб.", amount);
         }
     }
+
 }
