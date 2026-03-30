@@ -49,7 +49,7 @@ public class InitTradingAccount {
         this.sandboxService = serviceStubFactory.newSyncService(SandboxServiceGrpc::newBlockingStub);
     }
 
-    @PostConstruct
+//    @PostConstruct
     public void init() {
 //        var accountsRequest = GetAccountsRequest.newBuilder()
 //                .setStatus(AccountStatus.ACCOUNT_STATUS_ALL)

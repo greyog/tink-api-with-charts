@@ -58,7 +58,7 @@ public class FindInstrument {
         this.instrumentsService = serviceStubFactory.newSyncService(InstrumentsServiceGrpc::newBlockingStub);
     }
 
-    @PostConstruct
+//    @PostConstruct
     public void init() {
         SharesResponse shares = instrumentsService.getStub().shares(InstrumentsRequest.newBuilder().build());
         exportTradableInstrumentsToCsv(shares);
