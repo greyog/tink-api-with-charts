@@ -3,50 +3,50 @@ package com.github.tink_api_with_charts.component;
 import com.github.tink_api_with_charts.cinfiguration.TradingProperties;
 import jakarta.annotation.PostConstruct;
 import lombok.Getter;
-import lombok.RequiredArgsConstructor;
+import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
-import ru.tinkoff.piapi.contract.v1.Account;
 import ru.tinkoff.piapi.contract.v1.AccountStatus;
-import ru.tinkoff.piapi.contract.v1.AccountType;
 import ru.tinkoff.piapi.contract.v1.GetAccountsRequest;
 import ru.tinkoff.piapi.contract.v1.GetAccountsResponse;
+import ru.tinkoff.piapi.contract.v1.InstrumentRequest;
+import ru.tinkoff.piapi.contract.v1.InstrumentsRequest;
 import ru.tinkoff.piapi.contract.v1.InstrumentsServiceGrpc;
 import ru.tinkoff.piapi.contract.v1.OpenSandboxAccountRequest;
 import ru.tinkoff.piapi.contract.v1.OpenSandboxAccountResponse;
-import ru.tinkoff.piapi.contract.v1.Order;
-import ru.tinkoff.piapi.contract.v1.OrderBook;
 import ru.tinkoff.piapi.contract.v1.OrdersServiceGrpc;
-import ru.tinkoff.piapi.contract.v1.Quotation;
 import ru.tinkoff.piapi.contract.v1.SandboxPayInRequest;
 import ru.tinkoff.piapi.contract.v1.SandboxServiceGrpc;
+import ru.tinkoff.piapi.contract.v1.SecurityTradingStatus;
+import ru.tinkoff.piapi.contract.v1.Share;
+import ru.tinkoff.piapi.contract.v1.SharesResponse;
+import ru.tinkoff.piapi.contract.v1.TradingStatus;
 import ru.tinkoff.piapi.contract.v1.UsersServiceGrpc;
 import ru.tinkoff.piapi.contract.v1.WithdrawLimitsRequest;
 import ru.ttech.piapi.core.connector.ConnectorConfiguration;
 import ru.ttech.piapi.core.connector.ServiceStubFactory;
 import ru.ttech.piapi.core.connector.SyncStubWrapper;
-import ru.ttech.piapi.core.connector.resilience.ResilienceConfiguration;
-import ru.ttech.piapi.core.connector.resilience.ResilienceSyncStubWrapper;
 import ru.ttech.piapi.core.helpers.NumberMapper;
-import ru.ttech.piapi.core.impl.marketdata.MarketDataStreamManager;
-import ru.ttech.piapi.core.impl.marketdata.subscription.Instrument;
-import ru.ttech.piapi.springboot.configuration.InvestAutoConfiguration;
 
+import java.io.BufferedWriter;
+import java.io.FileWriter;
+import java.io.IOException;
 import java.math.BigDecimal;
-import java.util.Set;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.Comparator;
 
 @Slf4j
 @Component
 public class FindInstrument {
 
+    private static final String OUTPUT_DIR = "output";
+    private static final String FILE_NAME = "tradable_instruments.csv";
     private final TradingProperties properties;
     private final ConnectorConfiguration configuration;
-    private final SyncStubWrapper<UsersServiceGrpc.UsersServiceBlockingStub> userService;
     private final SyncStubWrapper<InstrumentsServiceGrpc.InstrumentsServiceBlockingStub> instrumentsService;
-    private final SyncStubWrapper<OrdersServiceGrpc.OrdersServiceBlockingStub> ordersService;
-    private final SyncStubWrapper<SandboxServiceGrpc.SandboxServiceBlockingStub> sandboxService;
-    @Getter
-    private String tradingAccountId;
+
 
     public FindInstrument(
             TradingProperties properties,
@@ -55,60 +55,66 @@ public class FindInstrument {
     ) {
         this.properties = properties;
         this.configuration = configuration;
-        this.userService = serviceStubFactory.newSyncService(UsersServiceGrpc::newBlockingStub);
         this.instrumentsService = serviceStubFactory.newSyncService(InstrumentsServiceGrpc::newBlockingStub);
-        this.ordersService = serviceStubFactory.newSyncService(OrdersServiceGrpc::newBlockingStub);
-        this.sandboxService = serviceStubFactory.newSyncService(SandboxServiceGrpc::newBlockingStub);
     }
 
     @PostConstruct
     public void init() {
-//        var accountsRequest = GetAccountsRequest.newBuilder()
-//                .setStatus(AccountStatus.ACCOUNT_STATUS_ALL)
-//                .build();
-//        var accountsResponse = userService.callSyncMethod(stub -> stub.getAccounts(accountsRequest));
-//        System.out.println("accountsResponse.getAccountsList() = " + accountsResponse.getAccountsList());
-        //        tradingAccountId = accountsResponse.getAccountsList().stream()
-//                .filter(acc -> acc.getType() == AccountType.ACCOUNT_TYPE_TINKOFF)
-//                .findFirst()
-//                .map(Account::getId)
-//                .orElseThrow(() -> new IllegalStateException("Не найден открытый брокерский счет"));
-//        log.info("Брокерский счет: {}", tradingAccountId);
-        if (configuration.isSandboxEnabled()) {
-            GetAccountsResponse sandboxAccounts = sandboxService.getStub().getSandboxAccounts(
-                    GetAccountsRequest.newBuilder()
-                            .setStatus(AccountStatus.ACCOUNT_STATUS_OPEN)
-                    .build());
-            if (sandboxAccounts.getAccountsCount() == 0) {
-                OpenSandboxAccountResponse openSandboxAccountResponse = sandboxService.getStub().openSandboxAccount(
-                        OpenSandboxAccountRequest.newBuilder()
-                        .build());
-                tradingAccountId = openSandboxAccountResponse.getAccountId();
-            } else {
-                tradingAccountId = sandboxAccounts.getAccounts(0).getId();
-            }
-            payInSandbox();
-        }
+        SharesResponse shares = instrumentsService.getStub().shares(InstrumentsRequest.newBuilder().build());
+        exportTradableInstrumentsToCsv(shares);
     }
 
-    private void payInSandbox() {
-        var balanceRequest = WithdrawLimitsRequest.newBuilder().setAccountId(tradingAccountId).build();
-        var balanceResponse = sandboxService.callSyncMethod(stub -> stub.getSandboxWithdrawLimits(balanceRequest));
-        var balance = balanceResponse.getMoneyList().stream().filter(moneyValue -> moneyValue.getCurrency().equals("rub"))
-                .findFirst()
-                .map(NumberMapper::moneyValueToBigDecimal)
-                .orElse(BigDecimal.ZERO);
-        var configBalance = BigDecimal.valueOf(properties.getBalance());
-        log.info("Баланс: {} (настройка: {})", balance, configBalance);
-        if (balance.compareTo(BigDecimal.valueOf(properties.getBalance())) < 0) {
-            var amount = configBalance.subtract(balance);
-            var payInRequest = SandboxPayInRequest.newBuilder()
-                    .setAccountId(tradingAccountId)
-                    .setAmount(NumberMapper.bigDecimalToMoneyValue(amount, "rub"))
-                    .build();
-            sandboxService.callSyncMethod(stub -> stub.sandboxPayIn(payInRequest));
-            log.info("Баланс песочницы пополнен на сумму: {} руб.", amount);
+    public void printTradableApiInstruments(SharesResponse sharesResponse) {
+        sharesResponse.getInstrumentsList().stream()
+                .filter(Share::getApiTradeAvailableFlag)
+                .filter(share -> SecurityTradingStatus.SECURITY_TRADING_STATUS_NORMAL_TRADING.equals(share.getTradingStatus()))
+                .sorted(Comparator.comparing(Share::getTicker))
+                .forEach(instrument -> System.out.printf(
+                        "Ticker: %s,\t FIGI: %s,\t UID: %s%n",
+                        instrument.getTicker(),
+                        instrument.getFigi(),
+                        instrument.getUid()
+                ));
+    }
+
+    @SneakyThrows
+    public void exportTradableInstrumentsToCsv(SharesResponse sharesResponse) {
+        // Создать папку, если её нет
+        Path outputDir = Paths.get(OUTPUT_DIR);
+        if (!Files.exists(outputDir)) {
+            Files.createDirectories(outputDir);
+            System.out.println("Создана директория: " + outputDir.toAbsolutePath());
         }
+
+        // Путь к файлу
+        Path csvFilePath = outputDir.resolve(FILE_NAME);
+
+        // Запись в файл
+        try (BufferedWriter writer = new BufferedWriter(new FileWriter(csvFilePath.toFile()))) {
+            // Заголовок
+            writer.write("Ticker,FIGI,UID");
+            writer.newLine();
+
+            // Данные
+            sharesResponse.getInstrumentsList().stream()
+                    .filter(Share::getApiTradeAvailableFlag)
+                    .filter(share -> SecurityTradingStatus.SECURITY_TRADING_STATUS_NORMAL_TRADING.equals(share.getTradingStatus()))
+                    .sorted(Comparator.comparing(Share::getTicker))
+                    .forEach(instrument -> {
+                        try {
+                            writer.write(String.format("%s,%s,%s",
+                                    instrument.getTicker(),
+                                    instrument.getFigi(),
+                                    instrument.getUid()));
+                            writer.newLine();
+                        } catch (IOException e) {
+                            throw new RuntimeException("Ошибка при записи строки", e);
+                        }
+                    });
+
+            log.info("Файл сохранён: " + csvFilePath.toAbsolutePath());
+        }
+
     }
 
 }

@@ -4,7 +4,7 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-class FindInstrumentTest {
+class InitTradingAccountTest {
 
     @Test
     void init() {
