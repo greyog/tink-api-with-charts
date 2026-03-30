@@ -87,7 +87,17 @@ public class OrderBookMonitor {
                 futureAskQty.set(bestAskVolume);
             }
         }
+        updateSpreads();
+    }
 
+    private void updateSpreads() {
+        if (shareBidQty.get() * shareAskQty.get() * futureBidQty.get() * futureAskQty.get() == 0) {
+            log.info("Не хватает данных для расчёта цены раздвижки");
+            return;
+        }
+        double spreadSell = futureBid.get() - shareAsk.get();
+        double spreadBuy = futureAsk.get() - shareBid.get();
+        System.out.printf("Spread Sell: %s,\tSpread Buy: %s\n", spreadSell, spreadBuy);
     }
 
     private void updateShareOrderBook(OrderBook orderBook) {
