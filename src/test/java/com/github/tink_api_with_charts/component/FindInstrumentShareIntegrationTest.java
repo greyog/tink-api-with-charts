@@ -5,14 +5,12 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 
-import static org.junit.jupiter.api.Assertions.*;
-
 @SpringBootTest
-@Import(FindInstrument.class) // чтобы можно было внедрить бин напрямую
-class FindInstrumentIntegrationTest {
+@Import(FindInstrumentShare.class) // чтобы можно было внедрить бин напрямую
+class FindInstrumentShareIntegrationTest {
 
     @Autowired
-    private FindInstrument findInstrument;
+    private FindInstrumentShare findInstrumentShare;
 
     @Test
     void test() {

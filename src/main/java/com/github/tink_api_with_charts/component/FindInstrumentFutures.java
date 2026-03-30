@@ -1,37 +1,23 @@
 package com.github.tink_api_with_charts.component;
 
-import com.github.tink_api_with_charts.cinfiguration.TradingProperties;
 import jakarta.annotation.PostConstruct;
-import lombok.Getter;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
-import ru.tinkoff.piapi.contract.v1.AccountStatus;
-import ru.tinkoff.piapi.contract.v1.GetAccountsRequest;
-import ru.tinkoff.piapi.contract.v1.GetAccountsResponse;
-import ru.tinkoff.piapi.contract.v1.InstrumentRequest;
+import ru.tinkoff.piapi.contract.v1.AssetType;
+import ru.tinkoff.piapi.contract.v1.Future;
+import ru.tinkoff.piapi.contract.v1.FuturesResponse;
 import ru.tinkoff.piapi.contract.v1.InstrumentsRequest;
 import ru.tinkoff.piapi.contract.v1.InstrumentsServiceGrpc;
-import ru.tinkoff.piapi.contract.v1.OpenSandboxAccountRequest;
-import ru.tinkoff.piapi.contract.v1.OpenSandboxAccountResponse;
-import ru.tinkoff.piapi.contract.v1.OrdersServiceGrpc;
-import ru.tinkoff.piapi.contract.v1.SandboxPayInRequest;
-import ru.tinkoff.piapi.contract.v1.SandboxServiceGrpc;
 import ru.tinkoff.piapi.contract.v1.SecurityTradingStatus;
 import ru.tinkoff.piapi.contract.v1.Share;
 import ru.tinkoff.piapi.contract.v1.SharesResponse;
-import ru.tinkoff.piapi.contract.v1.TradingStatus;
-import ru.tinkoff.piapi.contract.v1.UsersServiceGrpc;
-import ru.tinkoff.piapi.contract.v1.WithdrawLimitsRequest;
-import ru.ttech.piapi.core.connector.ConnectorConfiguration;
 import ru.ttech.piapi.core.connector.ServiceStubFactory;
 import ru.ttech.piapi.core.connector.SyncStubWrapper;
-import ru.ttech.piapi.core.helpers.NumberMapper;
 
 import java.io.BufferedWriter;
 import java.io.FileWriter;
 import java.io.IOException;
-import java.math.BigDecimal;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -39,38 +25,38 @@ import java.util.Comparator;
 
 @Slf4j
 @Component
-public class FindInstrument {
+public class FindInstrumentFutures {
 
     private static final String OUTPUT_DIR = "output";
-    private static final String FILE_NAME = "tradable_instruments.csv";
-    private final TradingProperties properties;
-    private final ConnectorConfiguration configuration;
+    private static final String FILE_NAME = "tradable_futures.csv";
     private final SyncStubWrapper<InstrumentsServiceGrpc.InstrumentsServiceBlockingStub> instrumentsService;
 
-
-    public FindInstrument(
-            TradingProperties properties,
-            ConnectorConfiguration configuration,
+    public FindInstrumentFutures(
             ServiceStubFactory serviceStubFactory
     ) {
-        this.properties = properties;
-        this.configuration = configuration;
         this.instrumentsService = serviceStubFactory.newSyncService(InstrumentsServiceGrpc::newBlockingStub);
     }
 
 //    @PostConstruct
     public void init() {
-        SharesResponse shares = instrumentsService.getStub().shares(InstrumentsRequest.newBuilder().build());
-        exportTradableInstrumentsToCsv(shares);
+        FuturesResponse futures = instrumentsService.getStub().futures(InstrumentsRequest.newBuilder().build());
+//        printTradableApiInstruments(futures);
+        exportTradableInstrumentsToCsv(futures);
     }
 
-    public void printTradableApiInstruments(SharesResponse sharesResponse) {
-        sharesResponse.getInstrumentsList().stream()
-                .filter(Share::getApiTradeAvailableFlag)
-                .filter(share -> SecurityTradingStatus.SECURITY_TRADING_STATUS_NORMAL_TRADING.equals(share.getTradingStatus()))
-                .sorted(Comparator.comparing(Share::getTicker))
+    public void printTradableApiInstruments(FuturesResponse response) {
+        response.getInstrumentsList().stream()
+                .filter(Future::getApiTradeAvailableFlag)
+                .filter(future -> SecurityTradingStatus.SECURITY_TRADING_STATUS_NORMAL_TRADING.equals(future.getTradingStatus()))
+                .filter(future -> "TYPE_SECURITY".equals(future.getAssetType()))
+                .sorted(Comparator.comparing(Future::getTicker))
+//                .limit(1)
+//                .forEach(instrument -> System.out.println(
+//                        instrument
+//                ));
                 .forEach(instrument -> System.out.printf(
-                        "Ticker: %s,\t FIGI: %s,\t UID: %s%n",
+                        "Basic Asset: %s,\t Ticker: %s,\t\t FIGI: %s,\t UID: %s%n",
+                        instrument.getBasicAsset(),
                         instrument.getTicker(),
                         instrument.getFigi(),
                         instrument.getUid()
@@ -78,7 +64,7 @@ public class FindInstrument {
     }
 
     @SneakyThrows
-    public void exportTradableInstrumentsToCsv(SharesResponse sharesResponse) {
+    public void exportTradableInstrumentsToCsv(FuturesResponse response) {
         // Создать папку, если её нет
         Path outputDir = Paths.get(OUTPUT_DIR);
         if (!Files.exists(outputDir)) {
@@ -92,17 +78,19 @@ public class FindInstrument {
         // Запись в файл
         try (BufferedWriter writer = new BufferedWriter(new FileWriter(csvFilePath.toFile()))) {
             // Заголовок
-            writer.write("Ticker,FIGI,UID");
+            writer.write("asset,\t ticker,\t FIGI,\t UID");
             writer.newLine();
 
             // Данные
-            sharesResponse.getInstrumentsList().stream()
-                    .filter(Share::getApiTradeAvailableFlag)
-                    .filter(share -> SecurityTradingStatus.SECURITY_TRADING_STATUS_NORMAL_TRADING.equals(share.getTradingStatus()))
-                    .sorted(Comparator.comparing(Share::getTicker))
+            response.getInstrumentsList().stream()
+                    .filter(Future::getApiTradeAvailableFlag)
+                    .filter(future -> SecurityTradingStatus.SECURITY_TRADING_STATUS_NORMAL_TRADING.equals(future.getTradingStatus()))
+                    .filter(future -> "TYPE_SECURITY".equals(future.getAssetType()))
+                    .sorted(Comparator.comparing(Future::getTicker))
                     .forEach(instrument -> {
                         try {
-                            writer.write(String.format("%s,%s,%s",
+                            writer.write(String.format("%s,\t %s,\t %s,\t %s",
+                                    instrument.getBasicAsset(),
                                     instrument.getTicker(),
                                     instrument.getFigi(),
                                     instrument.getUid()));
