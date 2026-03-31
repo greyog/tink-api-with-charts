@@ -97,11 +97,10 @@ public class OrderBookMonitor {
         }
         double spreadSell = futureBid.get() - shareAsk.get();
         double spreadBuy = futureAsk.get() - shareBid.get();
-        System.out.printf("Spread Sell: %s,\tSpread Buy: %s\n", spreadSell, spreadBuy);
-    }
-
-    private void updateShareOrderBook(OrderBook orderBook) {
-
+        long spreadSellQty = Math.min(futureBidQty.get(), shareAskQty.get());
+        long spreadBuyQty = Math.min(futureAskQty.get(), shareBidQty.get());
+        System.out.printf("Spread Sell: %s,\tSpread Sell qty: %s,\tSpread Buy: %s,\tSpread Buy qty: %s\n",
+                spreadSell, spreadSellQty, spreadBuy, spreadBuyQty);
     }
 
     private void printBestBidAndAsk(OrderBook instrument) {
