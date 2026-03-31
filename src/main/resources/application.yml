@@ -1,6 +1,21 @@
 spring:
   application:
     name: tink-api-with-charts
+  datasource:
+    url: jdbc:sqlite:spread_history.db
+    driver-class-name: org.sqlite.JDBC
+    jpa:
+      database-platform: org.hibernate.community.dialect.SQLiteDialect
+      hibernate:
+        ddl-auto: update
+      show-sql: true
+
+#logging:
+#  level:
+#    com.github.tink_api_with_charts: DEBUG
+#    ru.ttech.piapi: INFO
+
+
 trading:
   bot:
     lots: 2

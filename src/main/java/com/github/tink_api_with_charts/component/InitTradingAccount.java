@@ -1,7 +1,6 @@
 package com.github.tink_api_with_charts.component;
 
 import com.github.tink_api_with_charts.cinfiguration.TradingProperties;
-import jakarta.annotation.PostConstruct;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;

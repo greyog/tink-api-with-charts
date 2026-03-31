@@ -1,11 +1,10 @@
 package com.github.tink_api_with_charts.cinfiguration;
 
+import lombok.Data;
 import lombok.Getter;
-import lombok.Setter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
-@Getter
-@Setter
+@Data
 @ConfigurationProperties(prefix = "trading.bot")
 public class TradingProperties {
   /**
@@ -16,4 +15,5 @@ public class TradingProperties {
   * Баланс счёта песочницы
    */
   private long balance;
+
 }
