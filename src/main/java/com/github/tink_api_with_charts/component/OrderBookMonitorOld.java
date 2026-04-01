@@ -44,7 +44,7 @@ public class OrderBookMonitorOld {
         this.marketDataStreamManager = marketDataStreamManager;
     }
 
-        @PostConstruct
+//        @PostConstruct
     public void startMonitoring() {
         log.info("Запуск мониторинга стакана для INSTRUMENT_UID={}", SHARE_UID);
 

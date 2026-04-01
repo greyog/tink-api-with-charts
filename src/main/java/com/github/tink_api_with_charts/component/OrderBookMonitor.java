@@ -105,10 +105,8 @@ public class OrderBookMonitor {
         long spreadBuyQty = Math.min(futureAskQty.get(), shareBidQty.get());
 
         // Проверяем, изменились ли значения
-        boolean hasChanged = !lastSpreadSell.get().equals(spreadSell) ||
-                             !lastSpreadBuy.get().equals(spreadBuy) ||
-                             lastSpreadSellQty.get() != spreadSellQty ||
-                             lastSpreadBuyQty.get() != spreadBuyQty;
+        boolean hasChanged = lastSpreadSell.get().compareTo(spreadSell) != 0 ||
+                             lastSpreadBuy.get().compareTo(spreadBuy) != 0;
 
         if (hasChanged) {
             // Обновляем последние значения
@@ -118,8 +116,7 @@ public class OrderBookMonitor {
             lastSpreadBuyQty.set(spreadBuyQty);
 
             // Выводим в консоль
-            System.out.printf("[%s] Spread Sell: %s (%d), Spread Buy: %s (%d)\n",
-                    java.time.LocalDateTime.now(),
+            log.info("Spread Sell: {} ({}), Spread Buy: {} ({})",
                     spreadSell, spreadSellQty,
                     spreadBuy, spreadBuyQty);
 
