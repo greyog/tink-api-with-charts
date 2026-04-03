@@ -16,4 +16,8 @@ public class TradingProperties {
    */
   private long balance;
 
+  private String shareUid;
+
+  private String futureUid;
+
 }

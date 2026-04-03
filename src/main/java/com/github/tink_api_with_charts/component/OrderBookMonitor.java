@@ -1,16 +1,21 @@
 package com.github.tink_api_with_charts.component;
 
+import com.github.tink_api_with_charts.cinfiguration.TradingProperties;
 import com.github.tink_api_with_charts.service.SpreadHistoryService;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.jetbrains.annotations.NotNull;
 import org.springframework.stereotype.Component;
 import ru.tinkoff.piapi.contract.v1.Order;
 import ru.tinkoff.piapi.contract.v1.OrderBook;
 import ru.tinkoff.piapi.contract.v1.OrderBookType;
 import ru.tinkoff.piapi.contract.v1.Quotation;
+import ru.tinkoff.piapi.contract.v1.TradeDirection;
+import ru.tinkoff.piapi.contract.v1.TradeSourceType;
 import ru.ttech.piapi.core.impl.marketdata.MarketDataStreamManager;
 import ru.ttech.piapi.core.impl.marketdata.subscription.Instrument;
+import ru.ttech.piapi.core.impl.marketdata.wrapper.TradeWrapper;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -25,16 +30,19 @@ public class OrderBookMonitor {
 
     private final MarketDataStreamManager marketDataStreamManager;
     private final SpreadHistoryService spreadHistoryService;
+    private final TradingProperties properties;
 
-    // Идентификаторы инструментов
-    private static final String SHARE_UID = "87db07bc-0e02-4e29-90bb-05e8ef791d7b";
-    private static final String FUTURE_UID = "12275713-0583-4add-a4a5-c7dd234d4f34";
+    private static final BigDecimal FUTURE_FEE_PERC = BigDecimal.valueOf(0.025);
+//    private static final BigDecimal FUTURE_FEE_PERC = BigDecimal.valueOf(0.025);
 
     // Текущие значения стакана
     private static final AtomicReference<BigDecimal> shareBid = new AtomicReference<>(BigDecimal.ZERO);
     private static final AtomicReference<BigDecimal> shareAsk = new AtomicReference<>(BigDecimal.ZERO);
     private static final AtomicReference<BigDecimal> futureBid = new AtomicReference<>(BigDecimal.ZERO);
     private static final AtomicReference<BigDecimal> futureAsk = new AtomicReference<>(BigDecimal.ZERO);
+
+    private static final AtomicReference<BigDecimal> futureLastBuyPrice = new AtomicReference<>(BigDecimal.ZERO);
+    private static final AtomicReference<BigDecimal> futureLastSellPrice = new AtomicReference<>(BigDecimal.ZERO);
 
     private static final AtomicLong shareBidQty = new AtomicLong();
     private static final AtomicLong shareAskQty = new AtomicLong();
@@ -50,14 +58,17 @@ public class OrderBookMonitor {
     @PostConstruct
     public void startMonitoring() {
         log.info("Запуск мониторинга стакана для инструментов");
-
         marketDataStreamManager.subscribeOrderBooks(
                 Set.of(
-                        new Instrument(SHARE_UID, 10, OrderBookType.ORDERBOOK_TYPE_ALL),
-                        new Instrument(FUTURE_UID, 10, OrderBookType.ORDERBOOK_TYPE_ALL)
+                        new Instrument(properties.getShareUid(), 10, OrderBookType.ORDERBOOK_TYPE_ALL),
+                        new Instrument(properties.getFutureUid(), 10, OrderBookType.ORDERBOOK_TYPE_ALL)
                 ),
                 orderBookWrapper -> updateOrderBook(orderBookWrapper.getOriginal())
         );
+        marketDataStreamManager.subscribeTrades(Set.of(new Instrument(properties.getFutureUid())),
+                TradeSourceType.TRADE_SOURCE_ALL, true,
+                tradeWrapper -> updateLastPrice(tradeWrapper),
+                openInterestWrapper -> log.info("Open Interest for {}: {}", openInterestWrapper.getTicker(), openInterestWrapper.getOpenInterest()));
         marketDataStreamManager.start();
     }
 
@@ -75,54 +86,84 @@ public class OrderBookMonitor {
         long bestBidVolume = bestBid.getQuantity();
         long bestAskVolume = bestAsk.getQuantity();
 
-        switch (orderBook.getInstrumentUid()) {
-            case SHARE_UID -> {
-                shareBid.set(bestBidPrice);
-                shareAsk.set(bestAskPrice);
-                shareBidQty.set(bestBidVolume);
-                shareAskQty.set(bestAskVolume);
-            }
-            case FUTURE_UID -> {
-                futureBid.set(bestBidPrice);
-                futureAsk.set(bestAskPrice);
-                futureBidQty.set(bestBidVolume);
-                futureAskQty.set(bestAskVolume);
-            }
+        String instrumentUid = orderBook.getInstrumentUid();
+        if (properties.getShareUid().equals(instrumentUid)) {
+            shareBid.set(bestBidPrice);
+            shareAsk.set(bestAskPrice);
+            shareBidQty.set(bestBidVolume);
+            shareAskQty.set(bestAskVolume);
+        } else if (properties.getFutureUid().equals(instrumentUid)) {
+            futureBid.set(bestBidPrice);
+            futureAsk.set(bestAskPrice);
+            futureBidQty.set(bestBidVolume);
+            futureAskQty.set(bestAskVolume);
         }
-        updateSpreads();
     }
 
-    private void updateSpreads() {
-        if (shareBidQty.get() * shareAskQty.get() * futureBidQty.get() * futureAskQty.get() == 0) {
+    private void updateLastPrice(TradeWrapper trade) {
+        switch (trade.getDirection()) {
+            case TRADE_DIRECTION_BUY -> {
+                futureLastBuyPrice.set(trade.getPrice());
+            }
+            case TRADE_DIRECTION_SELL -> {
+                futureLastSellPrice.set(trade.getPrice());
+            }
+            default -> {log.info("Неизвестный trade direction: {}", trade.getDirection()); return;}
+        }
+        updateSpreads(trade.getDirection());
+    }
+
+    private void updateSpreads(TradeDirection direction) {
+        if (shareBidQty.get() * shareAskQty.get() * futureBidQty.get() * futureAskQty.get() * futureLastSellPrice.get().signum() * futureLastBuyPrice.get().signum() == 0) {
             log.info("Не хватает данных для расчёта цены раздвижки");
             return;
         }
 
-        BigDecimal spreadSell = futureBid.get().subtract(shareAsk.get());
-        BigDecimal spreadBuy = futureAsk.get().subtract(shareBid.get());
+        switch (direction) {
+            case TRADE_DIRECTION_BUY -> {
+                BigDecimal spreadRawSell = futureLastBuyPrice.get().subtract(shareAsk.get());
+                BigDecimal fee = calcFee(futureLastBuyPrice.get());
+                lastSpreadSell.set(spreadRawSell.subtract(fee));
+            }
+            case TRADE_DIRECTION_SELL -> {
+                BigDecimal spreadRawBuy = futureLastSellPrice.get().subtract(shareBid.get());
+                BigDecimal fee = calcFee(futureLastSellPrice.get());
+                lastSpreadBuy.set(spreadRawBuy.add(fee));
+            }
+        }
 
-        long spreadSellQty = Math.min(futureBidQty.get(), shareAskQty.get());
-        long spreadBuyQty = Math.min(futureAskQty.get(), shareBidQty.get());
+//        long spreadSellQty = Math.min(futureBidQty.get(), shareAskQty.get());
+//        long spreadBuyQty = Math.min(futureAskQty.get(), shareBidQty.get());
 
         // Проверяем, изменились ли значения
-        boolean hasChanged = lastSpreadSell.get().compareTo(spreadSell) != 0 ||
-                             lastSpreadBuy.get().compareTo(spreadBuy) != 0;
+//        boolean hasChanged = lastSpreadSell.get().compareTo(spreadSell) != 0 ||
+//                             lastSpreadBuy.get().compareTo(spreadBuy) != 0;
 
-        if (hasChanged) {
-            // Обновляем последние значения
-            lastSpreadSell.set(spreadSell);
-            lastSpreadBuy.set(spreadBuy);
-            lastSpreadSellQty.set(spreadSellQty);
-            lastSpreadBuyQty.set(spreadBuyQty);
+//        if (hasChanged) {
+        // Обновляем последние значения
+//            lastSpreadSell.set(spreadSell);
+//            lastSpreadBuy.set(spreadBuy);
+//            lastSpreadSellQty.set(spreadSellQty);
+//            lastSpreadBuyQty.set(spreadBuyQty);
 
-            // Выводим в консоль
-            log.info("Spread Sell: {} ({}), Spread Buy: {} ({})",
-                    spreadSell, spreadSellQty,
-                    spreadBuy, spreadBuyQty);
-
-            // Сохраняем в БД через сервис
-            spreadHistoryService.saveSpreadData(spreadSell, spreadBuy, spreadSellQty, spreadBuyQty);
+        // Выводим в консоль
+        log.info("Spread Sell: {} ({}), Spread Buy: {} ({})",
+                lastSpreadSell.get(), 0,
+                lastSpreadBuy.get(), 0);
+        if (lastSpreadSell.get().signum() * lastSpreadBuy.get().signum() == 0) {
+            log.info("Нули не сохраняем");
+            return;
         }
+
+        // Сохраняем в БД через сервис
+        spreadHistoryService.saveSpreadData(lastSpreadSell.get(), lastSpreadBuy.get(), 0, 0);
+//        }
+    }
+
+    private @NotNull BigDecimal calcFee(BigDecimal price) {
+        return price
+                .multiply(FUTURE_FEE_PERC)
+                .divide(BigDecimal.valueOf(100), 2, RoundingMode.CEILING);
     }
 
     private BigDecimal quotationToBigDecimal(Quotation q) {

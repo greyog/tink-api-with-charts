@@ -7,6 +7,9 @@ import org.springframework.stereotype.Service;
 import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.DriverManager;
+import java.sql.Timestamp;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 
 @Slf4j
 @Service
@@ -42,11 +45,11 @@ public class SpreadHistoryService {
 
     public void saveSpreadData(BigDecimal spreadSell, BigDecimal spreadBuy, long spreadSellQty, long spreadBuyQty) {
         String url = "jdbc:sqlite:" + DB_FILE;
-        String sql = "INSERT INTO spread_history(spread_sell, spread_buy, spread_sell_qty, spread_buy_qty) VALUES (?, ?, ?, ?)";
+        String sql = "INSERT INTO spread_history(timestamp, spread_sell, spread_buy, spread_sell_qty, spread_buy_qty) VALUES (?, ?, ?, ?, ?)";
 
-        try (var conn = DriverManager.getConnection(url);
-             var pstmt = conn.prepareStatement(sql)) {
+        try (var conn = DriverManager.getConnection(url); var pstmt = conn.prepareStatement(sql)) {
 
+            pstmt.setTimestamp(1, Timestamp.from(LocalDateTime.now().toInstant(ZoneOffset.of("+03:00"))));
             pstmt.setBigDecimal(1, spreadSell);
             pstmt.setBigDecimal(2, spreadBuy);
             pstmt.setLong(3, spreadSellQty);

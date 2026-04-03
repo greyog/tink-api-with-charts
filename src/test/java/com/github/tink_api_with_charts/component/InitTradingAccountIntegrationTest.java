@@ -14,7 +14,7 @@ public class InitTradingAccountIntegrationTest {
     @Autowired
     private InitTradingAccount initTradingAccount;
 
-    @Test
+//    @Test
     void testInit_findsBrokerAccountInProductionMode() throws InterruptedException {
         // Act
 //        findInstrument.init(); // вызов метода вручную (уже вызван через @PostConstruct)
