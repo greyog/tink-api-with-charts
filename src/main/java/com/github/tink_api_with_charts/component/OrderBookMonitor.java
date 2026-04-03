@@ -19,6 +19,8 @@ import ru.ttech.piapi.core.impl.marketdata.wrapper.TradeWrapper;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalTime;
+import java.time.ZoneId;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
@@ -28,6 +30,11 @@ import java.util.concurrent.atomic.AtomicReference;
 @RequiredArgsConstructor
 public class OrderBookMonitor {
 
+    public static final ZoneId ZONE_ID = ZoneId.of("Europe/Moscow");
+    public static final LocalTime SESSION_1_START = LocalTime.of(7, 0, 0);
+    public static final LocalTime SESSION_1_END = LocalTime.of(18, 53, 0);
+    public static final LocalTime SESSION_2_START = LocalTime.of(19, 0, 1);
+    public static final LocalTime SESSION_2_END = LocalTime.of(23, 49, 59);
     private final MarketDataStreamManager marketDataStreamManager;
     private final SpreadHistoryService spreadHistoryService;
     private final TradingProperties properties;
@@ -145,7 +152,10 @@ public class OrderBookMonitor {
 //            lastSpreadBuy.set(spreadBuy);
 //            lastSpreadSellQty.set(spreadSellQty);
 //            lastSpreadBuyQty.set(spreadBuyQty);
-
+        if (!checkTradingTime()) {
+            log.info("Торговая сессия для акций не идёт");
+            return;
+        }
         // Выводим в консоль
         log.info("Spread Sell: {} ({}), Spread Buy: {} ({})",
                 lastSpreadSell.get(), 0,
@@ -171,5 +181,17 @@ public class OrderBookMonitor {
         BigDecimal nano = BigDecimal.valueOf(q.getNano(), 9);
         BigDecimal result = units.add(nano);
         return result.setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private boolean checkTradingTime() {
+        // Получаем текущее время в московском часовом поясе
+        LocalTime currentTime = LocalTime.now(ZONE_ID);
+        // Проверяем торговые сессии
+        boolean tradingSession1 = !currentTime.isBefore(SESSION_1_START) &&
+                                  !currentTime.isAfter(SESSION_1_END);
+        boolean tradingSession2 = !currentTime.isBefore(SESSION_2_START) &&
+                                  !currentTime.isAfter(SESSION_2_END);
+
+        return tradingSession1 || tradingSession2;
     }
 }
