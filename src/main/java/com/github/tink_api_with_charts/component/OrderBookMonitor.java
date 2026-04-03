@@ -35,12 +35,12 @@ public class OrderBookMonitor {
     public static final LocalTime SESSION_1_END = LocalTime.of(18, 53, 0);
     public static final LocalTime SESSION_2_START = LocalTime.of(19, 0, 1);
     public static final LocalTime SESSION_2_END = LocalTime.of(23, 49, 59);
+
     private final MarketDataStreamManager marketDataStreamManager;
     private final SpreadHistoryService spreadHistoryService;
     private final TradingProperties properties;
 
     private static final BigDecimal FUTURE_FEE_PERC = BigDecimal.valueOf(0.025);
-//    private static final BigDecimal FUTURE_FEE_PERC = BigDecimal.valueOf(0.025);
 
     // Текущие значения стакана
     private static final AtomicReference<BigDecimal> shareBid = new AtomicReference<>(BigDecimal.ZERO);

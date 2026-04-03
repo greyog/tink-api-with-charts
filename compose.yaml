@@ -1,10 +1,30 @@
+version: '3.8'
+
 services:
-  mysql:
-    image: 'mysql:latest'
-    environment:
-      - 'MYSQL_DATABASE=mydatabase'
-      - 'MYSQL_PASSWORD=secret'
-      - 'MYSQL_ROOT_PASSWORD=verysecret'
-      - 'MYSQL_USER=myuser'
+  grafana:
+    image: grafana/grafana-enterprise
+    container_name: grafana
     ports:
-      - '3306'
+      - "3000:3000"
+    volumes:
+      - grafana-storage:/var/lib/grafana
+      - ./grafana-provisioning:/etc/grafana/provisioning
+      - ./dashboards:/var/lib/grafana/dashboards
+      - ./spread_history.db:/var/lib/grafana/spread_history.db:ro
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin123
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_INSTALL_PLUGINS=
+    restart: unless-stopped
+    depends_on:
+      - sqlite-db
+
+  sqlite-db:
+    image: nouchka/sqlite3
+    container_name: sqlite-db
+    volumes:
+      - ./spread_history.db:/data/spread_history.db
+    command: tail -f /dev/null
+
+volumes:
+  grafana-storage:

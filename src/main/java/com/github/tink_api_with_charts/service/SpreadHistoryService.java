@@ -50,10 +50,10 @@ public class SpreadHistoryService {
         try (var conn = DriverManager.getConnection(url); var pstmt = conn.prepareStatement(sql)) {
 
             pstmt.setTimestamp(1, Timestamp.from(LocalDateTime.now().toInstant(ZoneOffset.of("+03:00"))));
-            pstmt.setBigDecimal(1, spreadSell);
-            pstmt.setBigDecimal(2, spreadBuy);
-            pstmt.setLong(3, spreadSellQty);
-            pstmt.setLong(4, spreadBuyQty);
+            pstmt.setBigDecimal(2, spreadSell);
+            pstmt.setBigDecimal(3, spreadBuy);
+            pstmt.setLong(4, spreadSellQty);
+            pstmt.setLong(5, spreadBuyQty);
             pstmt.executeUpdate();
 
         } catch (Exception e) {
