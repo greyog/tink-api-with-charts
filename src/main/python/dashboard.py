@@ -13,12 +13,12 @@ DB_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../spre
 print(f"Путь к БД: {DB_PATH}")
 
 # Автообновление каждые 5 секунд
-if 'last_update' not in st.session_state:
-    st.session_state.last_update = time.time()
+# if 'last_update' not in st.session_state:
+#     st.session_state.last_update = time.time()
 
-if time.time() - st.session_state.last_update > 5:
-    st.session_state.last_update = time.time()
-    st.rerun()
+# if time.time() - st.session_state.last_update > 5:
+#     st.session_state.last_update = time.time()
+#     st.rerun()
 
 # Подключение к БД
 @st.cache_data(ttl=10)  # Кэширование на 10 секунд
@@ -55,6 +55,9 @@ if not df.empty:
     # Фильтр по сегодняшнему дню
     today = date.today()
     # df_today = df[df['timestamp'].dt.date == today].sort_values('timestamp')
+    koeff = 812
+    df['share_bid'] = df['share_bid'] * koeff
+    df['share_ask'] = df['share_ask'] * koeff
 
     if not df.empty:
         # Основной график с 4 линиями
