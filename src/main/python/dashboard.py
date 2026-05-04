@@ -35,11 +35,12 @@ def load_data():
                 future_bid,
                 future_ask
             FROM spread_history 
-            WHERE DATE(timestamp) = DATE('now')
+            WHERE DATE(datetime(timestamp/1000, 'unixepoch', 'localtime')) = DATE('now')
             ORDER BY id
         """, conn)
         conn.close()
-        df['timestamp'] = pd.to_datetime(df['timestamp'])
+        # Конвертация миллисекунд в datetime
+        df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
         return df
     except Exception as e:
         st.error(f"Ошибка подключения к БД: {e}")
