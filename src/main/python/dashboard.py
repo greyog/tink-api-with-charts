@@ -3,19 +3,37 @@ import sqlite3
 import pandas as pd
 import plotly.express as px
 from datetime import datetime, date
+import time
+import os
 
 st.set_page_config(page_title="Order Book Monitor", layout="wide")
 
-DB_PATH ='spread_history.db'
+# Относительный путь к БД (на 4 уровня выше скрипта)
+DB_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../spread_history.db'))
+print(f"Путь к БД: {DB_PATH}")
+
+# Автообновление каждые 5 секунд
+if 'last_update' not in st.session_state:
+    st.session_state.last_update = time.time()
+
+if time.time() - st.session_state.last_update > 5:
+    st.session_state.last_update = time.time()
+    st.rerun()
 
 # Подключение к БД
-@st.cache_data(ttl=30)  # Кэширование на 30 секунд
+@st.cache_data(ttl=10)  # Кэширование на 10 секунд
 def load_data():
     try:
         conn = sqlite3.connect(DB_PATH)
 
         df = pd.read_sql_query("""
-            SELECT * 
+            SELECT 
+                id,
+                timestamp,
+                share_bid,
+                share_ask,
+                future_bid,
+                future_ask
             FROM spread_history 
             WHERE DATE(timestamp) = DATE('now')
             ORDER BY id
@@ -38,12 +56,14 @@ if not df.empty:
     # df_today = df[df['timestamp'].dt.date == today].sort_values('timestamp')
 
     if not df.empty:
-        # Основной график спреда с логарифмической шкалой
-        fig_spread = px.line(df, x='timestamp', y=['spread_sell', 'spread_buy'],
-                             title=f"Динамика спреда - {today.strftime('%d.%m.%Y')} (логарифмическая шкала)",
-                             labels={'value': 'Спред (лог)', 'timestamp': 'Время'})
+        # Основной график с 4 линиями
+        fig_spread = px.line(df, x='timestamp', 
+                             y=['share_bid', 'share_ask', 'future_bid', 'future_ask'],
+                             title=f"Динамика котировок - {today.strftime('%d.%m.%Y')}",
+                             labels={'value': 'Значение', 'timestamp': 'Время'},
+                             color_discrete_sequence=px.colors.qualitative.Set1)
 
-        # Настройка графика для прокрутки и логарифмической шкалы
+        # Настройка графика для прокрутки
         fig_spread.update_layout(
             xaxis=dict(
                 rangeslider=dict(visible=True),  # Полоса прокрутки
@@ -52,12 +72,10 @@ if not df.empty:
             ),
             yaxis=dict(
                 fixedrange=False,
-                # type='log',  # Логарифмическая шкала!
-                title='Спред (лог)'
+                title='Значение'
             ),
             hovermode='x unified',
-            # УВЕЛИЧЕННЫЙ РАЗМЕР ГРАФИКА
-            height=800,  # Высота в пикселях
+            height=800,
             width=None,
             autosize=True
         )
@@ -66,7 +84,7 @@ if not df.empty:
         fig_spread.update_xaxes(showgrid=True, gridwidth=1, gridcolor='lightgray')
         fig_spread.update_yaxes(showgrid=True, gridwidth=1, gridcolor='lightgray')
 
-        # Отображение графика БЕЗ устаревших параметров
+        # Отображение графика
         st.plotly_chart(fig_spread, use_container_width=True)
 
     else:
