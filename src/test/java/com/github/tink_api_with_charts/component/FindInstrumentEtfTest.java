@@ -5,24 +5,18 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 
+import static org.junit.jupiter.api.Assertions.*;
+
 @SpringBootTest
-@Import(FindInstrumentEtf.class) // чтобы можно было внедрить бин напрямую
-class FindInstrumentShareIntegrationTest {
+@Import(FindInstrumentShare.class) // чтобы можно было внедрить бин напрямую
+class FindInstrumentEtfTest {
 
     @Autowired
-    private FindInstrumentEtf findInstrument;
-
-    @Test
-    void test() {
-
-    }
-
-    @Test
-    void printTradableApiInstruments() {
-    }
+    private FindInstrumentShare findInstrumentShare;
 
     @Test
     void exportTradableInstrumentsToCsv() {
-        findInstrument.exportTradableInstrumentsToCsv();
+        findInstrumentShare.exportTradableInstrumentsToCsv();
     }
+
 }

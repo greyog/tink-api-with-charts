@@ -1,17 +1,12 @@
 package com.github.tink_api_with_charts.component;
 
-import jakarta.annotation.PostConstruct;
 import lombok.SneakyThrows;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
-import ru.tinkoff.piapi.contract.v1.AssetType;
 import ru.tinkoff.piapi.contract.v1.Future;
 import ru.tinkoff.piapi.contract.v1.FuturesResponse;
 import ru.tinkoff.piapi.contract.v1.InstrumentsRequest;
 import ru.tinkoff.piapi.contract.v1.InstrumentsServiceGrpc;
 import ru.tinkoff.piapi.contract.v1.SecurityTradingStatus;
-import ru.tinkoff.piapi.contract.v1.Share;
-import ru.tinkoff.piapi.contract.v1.SharesResponse;
 import ru.ttech.piapi.core.connector.ServiceStubFactory;
 import ru.ttech.piapi.core.connector.SyncStubWrapper;
 
@@ -22,13 +17,15 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Comparator;
+import java.util.stream.Collectors;
 
-@Slf4j
 @Component
 public class FindInstrumentFutures {
 
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(FindInstrumentFutures.class);
+
     private static final String OUTPUT_DIR = "output";
-    private static final String FILE_NAME = "tradable_futures.csv";
+    private static final String FILE_NAME_TEMPLATE = "tradable_futures_%s.csv";
     private final SyncStubWrapper<InstrumentsServiceGrpc.InstrumentsServiceBlockingStub> instrumentsService;
 
     public FindInstrumentFutures(
@@ -37,18 +34,12 @@ public class FindInstrumentFutures {
         this.instrumentsService = serviceStubFactory.newSyncService(InstrumentsServiceGrpc::newBlockingStub);
     }
 
-//    @PostConstruct
-    public void init() {
+    public void printTradableApiInstruments() {
         FuturesResponse futures = instrumentsService.getStub().futures(InstrumentsRequest.newBuilder().build());
-//        printTradableApiInstruments(futures);
-        exportTradableInstrumentsToCsv(futures);
-    }
-
-    public void printTradableApiInstruments(FuturesResponse response) {
-        response.getInstrumentsList().stream()
+        futures.getInstrumentsList().stream()
                 .filter(Future::getApiTradeAvailableFlag)
                 .filter(future -> SecurityTradingStatus.SECURITY_TRADING_STATUS_NORMAL_TRADING.equals(future.getTradingStatus()))
-                .filter(future -> "TYPE_SECURITY".equals(future.getAssetType()))
+                .filter(future -> "TYPE_".equals(future.getAssetType()))
                 .sorted(Comparator.comparing(Future::getTicker))
 //                .limit(1)
 //                .forEach(instrument -> System.out.println(
@@ -60,11 +51,32 @@ public class FindInstrumentFutures {
                         instrument.getTicker(),
                         instrument.getFigi(),
                         instrument.getUid()
-                ));
+                ))
+        ;
+    }
+
+
+//    TYPE_COMMODITY
+//TYPE_CURRENCY
+//TYPE_INDEX
+//TYPE_SECURITY
+
+    public void printAssetTypes() {
+        FuturesResponse futures = instrumentsService.getStub().futures(InstrumentsRequest.newBuilder().build());
+        futures.getInstrumentsList().stream()
+                .filter(Future::getApiTradeAvailableFlag)
+                .filter(future -> SecurityTradingStatus.SECURITY_TRADING_STATUS_NORMAL_TRADING.equals(future.getTradingStatus()))
+                .map(Future::getAssetType)
+                .collect(Collectors.toSet())
+                .stream().sorted()
+                .forEach(System.out::println);
+        ;
     }
 
     @SneakyThrows
-    public void exportTradableInstrumentsToCsv(FuturesResponse response) {
+    public void exportTradableInstrumentsToCsv() {
+        String assetTypeToPrint = "TYPE_COMMODITY";
+        FuturesResponse futures = instrumentsService.getStub().futures(InstrumentsRequest.newBuilder().build());
         // Создать папку, если её нет
         Path outputDir = Paths.get(OUTPUT_DIR);
         if (!Files.exists(outputDir)) {
@@ -73,7 +85,7 @@ public class FindInstrumentFutures {
         }
 
         // Путь к файлу
-        Path csvFilePath = outputDir.resolve(FILE_NAME);
+        Path csvFilePath = outputDir.resolve(FILE_NAME_TEMPLATE.formatted(assetTypeToPrint));
 
         // Запись в файл
         try (BufferedWriter writer = new BufferedWriter(new FileWriter(csvFilePath.toFile()))) {
@@ -82,10 +94,10 @@ public class FindInstrumentFutures {
             writer.newLine();
 
             // Данные
-            response.getInstrumentsList().stream()
+            futures.getInstrumentsList().stream()
                     .filter(Future::getApiTradeAvailableFlag)
                     .filter(future -> SecurityTradingStatus.SECURITY_TRADING_STATUS_NORMAL_TRADING.equals(future.getTradingStatus()))
-                    .filter(future -> "TYPE_SECURITY".equals(future.getAssetType()))
+                    .filter(future -> assetTypeToPrint.equals(future.getAssetType()))
                     .sorted(Comparator.comparing(Future::getTicker))
                     .forEach(instrument -> {
                         try {

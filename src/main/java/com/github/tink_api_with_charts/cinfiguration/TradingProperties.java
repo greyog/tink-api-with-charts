@@ -4,7 +4,6 @@ import lombok.Data;
 import lombok.Getter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
-@Data
 @ConfigurationProperties(prefix = "trading.bot")
 public class TradingProperties {
   /**
@@ -20,4 +19,27 @@ public class TradingProperties {
 
   private String futureUid;
 
+  public long getBalance() {
+    return balance;
+  }
+
+  public void setBalance(long balance) {
+    this.balance = balance;
+  }
+
+  public String getShareUid() {
+    return shareUid;
+  }
+
+  public void setShareUid(String shareUid) {
+    this.shareUid = shareUid;
+  }
+
+  public String getFutureUid() {
+    return futureUid;
+  }
+
+  public void setFutureUid(String futureUid) {
+    this.futureUid = futureUid;
+  }
 }

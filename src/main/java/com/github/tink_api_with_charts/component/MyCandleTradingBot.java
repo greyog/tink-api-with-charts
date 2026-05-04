@@ -20,8 +20,9 @@ import java.util.Map;
 import java.util.function.Function;
 
 //@Component
-@Slf4j
 public class MyCandleTradingBot implements CandleTradingBot {
+
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(MyCandleTradingBot.class);
 
  @Override
  public GetCandlesRequest.CandleSource getCandleSource() {

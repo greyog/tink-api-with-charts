@@ -22,9 +22,10 @@ import ru.ttech.piapi.core.helpers.NumberMapper;
 
 import java.math.BigDecimal;
 
-@Slf4j
 @Component
 public class InitTradingAccount {
+
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(InitTradingAccount.class);
 
     private final TradingProperties properties;
     private final ConnectorConfiguration configuration;

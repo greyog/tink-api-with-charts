@@ -12,8 +12,19 @@ class FindInstrumentFuturesIntegrationTest {
     @Autowired
     private FindInstrumentFutures findInstrument;
 
-    @Test
-    void test() {
 
+    @Test
+    void printTradableApiInstruments() {
+        findInstrument.printTradableApiInstruments();
+    }
+
+    @Test
+    void printAssetTypes() {
+        findInstrument.printAssetTypes();
+    }
+
+    @Test
+    void exportTradableInstrumentsToCsv(){
+        findInstrument.exportTradableInstrumentsToCsv();
     }
 }

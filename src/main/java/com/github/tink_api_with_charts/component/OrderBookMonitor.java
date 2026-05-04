@@ -3,8 +3,6 @@ package com.github.tink_api_with_charts.component;
 import com.github.tink_api_with_charts.cinfiguration.TradingProperties;
 import com.github.tink_api_with_charts.service.SpreadHistoryService;
 import jakarta.annotation.PostConstruct;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.jetbrains.annotations.NotNull;
 import org.springframework.stereotype.Component;
 import ru.tinkoff.piapi.contract.v1.Order;
@@ -12,7 +10,6 @@ import ru.tinkoff.piapi.contract.v1.OrderBook;
 import ru.tinkoff.piapi.contract.v1.OrderBookType;
 import ru.tinkoff.piapi.contract.v1.Quotation;
 import ru.tinkoff.piapi.contract.v1.TradeDirection;
-import ru.tinkoff.piapi.contract.v1.TradeSourceType;
 import ru.ttech.piapi.core.impl.marketdata.MarketDataStreamManager;
 import ru.ttech.piapi.core.impl.marketdata.subscription.Instrument;
 import ru.ttech.piapi.core.impl.marketdata.wrapper.TradeWrapper;
@@ -25,10 +22,10 @@ import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
-@Slf4j
 @Component
-@RequiredArgsConstructor
 public class OrderBookMonitor {
+
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(OrderBookMonitor.class);
 
     public static final ZoneId ZONE_ID = ZoneId.of("Europe/Moscow");
     public static final LocalTime SESSION_1_START = LocalTime.of(7, 0, 0);
@@ -62,6 +59,12 @@ public class OrderBookMonitor {
     private static final AtomicLong lastSpreadSellQty = new AtomicLong();
     private static final AtomicLong lastSpreadBuyQty = new AtomicLong();
 
+    public OrderBookMonitor(MarketDataStreamManager marketDataStreamManager, SpreadHistoryService spreadHistoryService, TradingProperties properties) {
+        this.marketDataStreamManager = marketDataStreamManager;
+        this.spreadHistoryService = spreadHistoryService;
+        this.properties = properties;
+    }
+
     @PostConstruct
     public void startMonitoring() {
         log.info("Запуск мониторинга стакана для инструментов");
@@ -72,10 +75,10 @@ public class OrderBookMonitor {
                 ),
                 orderBookWrapper -> updateOrderBook(orderBookWrapper.getOriginal())
         );
-        marketDataStreamManager.subscribeTrades(Set.of(new Instrument(properties.getFutureUid())),
-                TradeSourceType.TRADE_SOURCE_ALL, true,
-                tradeWrapper -> updateLastPrice(tradeWrapper),
-                openInterestWrapper -> log.info("Open Interest for {}: {}", openInterestWrapper.getTicker(), openInterestWrapper.getOpenInterest()));
+//        marketDataStreamManager.subscribeTrades(Set.of(new Instrument(properties.getFutureUid())),
+//                TradeSourceType.TRADE_SOURCE_ALL, true,
+//                tradeWrapper -> updateLastPrice(tradeWrapper),
+//                openInterestWrapper -> log.info("Open Interest for {}: {}", openInterestWrapper.getTicker(), openInterestWrapper.getOpenInterest()));
         marketDataStreamManager.start();
     }
 
@@ -105,6 +108,8 @@ public class OrderBookMonitor {
             futureBidQty.set(bestBidVolume);
             futureAskQty.set(bestAskVolume);
         }
+        spreadHistoryService.saveSpreadData(shareBid.get(), shareAsk.get(), futureBid.get(), futureAsk.get());
+
     }
 
     private void updateLastPrice(TradeWrapper trade) {
@@ -166,7 +171,7 @@ public class OrderBookMonitor {
         }
 
         // Сохраняем в БД через сервис
-        spreadHistoryService.saveSpreadData(lastSpreadSell.get(), lastSpreadBuy.get(), 0, 0);
+//        spreadHistoryService.saveSpreadData(lastSpreadSell.get(), lastSpreadBuy.get(), 0, 0);
 //        }
     }
 

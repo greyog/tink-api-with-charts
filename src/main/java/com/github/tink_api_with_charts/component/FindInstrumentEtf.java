@@ -2,6 +2,8 @@ package com.github.tink_api_with_charts.component;
 
 import lombok.SneakyThrows;
 import org.springframework.stereotype.Component;
+import ru.tinkoff.piapi.contract.v1.Etf;
+import ru.tinkoff.piapi.contract.v1.EtfsResponse;
 import ru.tinkoff.piapi.contract.v1.InstrumentsRequest;
 import ru.tinkoff.piapi.contract.v1.InstrumentsServiceGrpc;
 import ru.tinkoff.piapi.contract.v1.SecurityTradingStatus;
@@ -19,15 +21,15 @@ import java.nio.file.Paths;
 import java.util.Comparator;
 
 @Component
-public class FindInstrumentShare {
+public class FindInstrumentEtf {
 
-    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(FindInstrumentShare.class);
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(FindInstrumentEtf.class);
 
     private static final String OUTPUT_DIR = "output";
-    private static final String FILE_NAME = "tradable_shares.csv";
+    private static final String FILE_NAME = "tradable_etfs.csv";
     private final SyncStubWrapper<InstrumentsServiceGrpc.InstrumentsServiceBlockingStub> instrumentsService;
 
-    public FindInstrumentShare(
+    public FindInstrumentEtf(
             ServiceStubFactory serviceStubFactory
     ) {
         this.instrumentsService = serviceStubFactory.newSyncService(InstrumentsServiceGrpc::newBlockingStub);
@@ -54,7 +56,7 @@ public class FindInstrumentShare {
 
     @SneakyThrows
     public void exportTradableInstrumentsToCsv() {
-        SharesResponse shares = instrumentsService.getStub().shares(InstrumentsRequest.newBuilder().build());
+        EtfsResponse response = instrumentsService.getStub().etfs(InstrumentsRequest.newBuilder().build());
         // Создать папку, если её нет
         Path outputDir = Paths.get(OUTPUT_DIR);
         if (!Files.exists(outputDir)) {
@@ -72,10 +74,10 @@ public class FindInstrumentShare {
             writer.newLine();
 
             // Данные
-            shares.getInstrumentsList().stream()
-                    .filter(Share::getApiTradeAvailableFlag)
-                    .filter(share -> SecurityTradingStatus.SECURITY_TRADING_STATUS_NORMAL_TRADING.equals(share.getTradingStatus()))
-                    .sorted(Comparator.comparing(Share::getTicker))
+            response.getInstrumentsList().stream()
+                    .filter(Etf::getApiTradeAvailableFlag)
+                    .filter(etf -> SecurityTradingStatus.SECURITY_TRADING_STATUS_NORMAL_TRADING.equals(etf.getTradingStatus()))
+                    .sorted(Comparator.comparing(Etf::getTicker))
                     .forEach(instrument -> {
                         try {
                             writer.write(String.format("%s,%s,%s",
