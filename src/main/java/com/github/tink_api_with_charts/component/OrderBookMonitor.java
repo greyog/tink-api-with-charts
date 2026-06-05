@@ -1,9 +1,11 @@
 package com.github.tink_api_with_charts.component;
 
 import com.github.tink_api_with_charts.cinfiguration.TradingProperties;
+import com.github.tink_api_with_charts.entity.PairState;
 import com.github.tink_api_with_charts.service.SpreadHistoryService;
 import org.jetbrains.annotations.NotNull;
 import org.springframework.stereotype.Component;
+import ru.tinkoff.piapi.contract.v1.InstrumentType;
 import ru.tinkoff.piapi.contract.v1.Order;
 import ru.tinkoff.piapi.contract.v1.OrderBook;
 import ru.tinkoff.piapi.contract.v1.OrderBookType;
@@ -19,8 +21,6 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.atomic.AtomicReference;
 
 @Component
 public class OrderBookMonitor {
@@ -38,6 +38,7 @@ public class OrderBookMonitor {
     private final TradingProperties properties;
 
     private static final BigDecimal FUTURE_FEE_PERC = BigDecimal.valueOf(0.025);
+    private static final BigDecimal FUTURE_FEE_FRAC = BigDecimal.valueOf(0.025).divide(BigDecimal.valueOf(100), 10, RoundingMode.HALF_UP);
 
     /**
      * Состояние по каждой паре инструментов
@@ -51,6 +52,9 @@ public class OrderBookMonitor {
      * Значение: имя пары
      */
     private final Map<String, String> uidToPairName = new ConcurrentHashMap<>();
+    private final Map<String, Integer>  pairLots = new ConcurrentHashMap<>();
+    private final Set<String> futureUids = new HashSet<>();
+    private final Set<String> shareUids = new HashSet<>();
 
     public OrderBookMonitor(MarketDataStreamManager marketDataStreamManager, 
                            SpreadHistoryService spreadHistoryService, 
@@ -76,6 +80,10 @@ public class OrderBookMonitor {
                 // Создаём состояние для пары
                 PairState state = new PairState();
                 pairStates.put(pair.getName(), state);
+
+                pairLots.put(pair.getName(), pair.getFutureLot());
+                futureUids.add(pair.getFutureUid());
+                shareUids.add(pair.getShareUid());
                 
                 // Маппим UID на имя пары
                 uidToPairName.put(pair.getShareUid(), pair.getName());
@@ -143,40 +151,29 @@ public class OrderBookMonitor {
             log.warn("Не найдено состояние для пары: {}", pairName);
             return;
         }
-        
-        // Обновляем состояние пары
-        state.update(instrumentUid, bestBidPrice, bestAskPrice, bestBidVolume, bestAskVolume);
-        
+
+        if (futureUids.contains(instrumentUid)) {
+            state.update(InstrumentType.INSTRUMENT_TYPE_FUTURES, bestBidPrice, bestAskPrice, bestBidVolume, bestAskVolume);
+        } else {
+            state.update(InstrumentType.INSTRUMENT_TYPE_SHARE, bestBidPrice, bestAskPrice, bestBidVolume, bestAskVolume);
+        }
+
         // Проверяем, есть ли данные по обоим инструментам пары
         if (state.hasBothInstruments()) {
             // Сохраняем спред в БД
-            int futureLot = getFutureLot(pairName);
+            int futureLot = pairLots.get(pairName);
             spreadHistoryService.saveSpreadData(
                 pairName,
-                state.shareBid.get(), 
-                state.shareAsk.get(), 
-                state.futureBid.get(), 
-                state.futureAsk.get(),
+                state.getShareBid(),
+                state.getShareAsk(),
+                state.getFutureBid(),
+                state.getFutureAsk(),
                 futureLot
             );
             
             // Логируем спред
             logSpread(pairName, state, futureLot);
         }
-    }
-
-    /**
-     * Получение размера лота фьючерса для пары
-     */
-    private int getFutureLot(String pairName) {
-        if (properties.getPairs() != null) {
-            for (TradingProperties.InstrumentPair pair : properties.getPairs()) {
-                if (pair.getName().equals(pairName)) {
-                    return pair.getFutureLot();
-                }
-            }
-        }
-        return 1; // значение по умолчанию
     }
 
     /**
@@ -189,26 +186,25 @@ public class OrderBookMonitor {
         }
         
         // Расчёт спреда с учётом комиссии
-        BigDecimal spreadSell = state.futureBid.get().subtract(state.shareAsk.get());
-        BigDecimal spreadBuy = state.futureAsk.get().subtract(state.shareBid.get());
+        BigDecimal spreadSell = state.getFutureBid().subtract(state.getShareAsk());
+        BigDecimal spreadBuy = state.getFutureAsk().subtract(state.getShareBid());
         
-        BigDecimal feeSell = calcFee(state.futureBid.get(), futureLot);
-        BigDecimal feeBuy = calcFee(state.futureAsk.get(), futureLot);
+        BigDecimal feeSell = calcFee(state.getFutureBid(), futureLot);
+        BigDecimal feeBuy = calcFee(state.getFutureAsk(), futureLot);
         
         spreadSell = spreadSell.subtract(feeSell);
         spreadBuy = spreadBuy.add(feeBuy);
         
-        log.info("Пара {}: Spread Sell: {} (объём: {}), Spread Buy: {} (объём: {})",
+        log.info("Пара {}: Spread Sell: {}, Spread Buy: {}",
                 pairName,
-                spreadSell, state.shareAskQty.get(),
-                spreadBuy, state.shareBidQty.get());
+                spreadSell,
+                spreadBuy);
     }
 
     private @NotNull BigDecimal calcFee(BigDecimal price, int futureLot) {
         return price
                 .multiply(BigDecimal.valueOf(futureLot))
-                .multiply(FUTURE_FEE_PERC)
-                .divide(BigDecimal.valueOf(100), 2, RoundingMode.CEILING);
+                .multiply(FUTURE_FEE_FRAC);
     }
 
     private BigDecimal quotationToBigDecimal(Quotation q) {
@@ -230,53 +226,4 @@ public class OrderBookMonitor {
         return tradingSession1 || tradingSession2;
     }
 
-    /**
-     * Состояние одной пары инструментов
-     */
-    private static class PairState {
-        // Цены и объёмы по акции
-        final AtomicReference<BigDecimal> shareBid = new AtomicReference<>(BigDecimal.ZERO);
-        final AtomicReference<BigDecimal> shareAsk = new AtomicReference<>(BigDecimal.ZERO);
-        final AtomicLong shareBidQty = new AtomicLong();
-        final AtomicLong shareAskQty = new AtomicLong();
-        
-        // Цены и объёмы по фьючерсу
-        final AtomicReference<BigDecimal> futureBid = new AtomicReference<>(BigDecimal.ZERO);
-        final AtomicReference<BigDecimal> futureAsk = new AtomicReference<>(BigDecimal.ZERO);
-        final AtomicLong futureBidQty = new AtomicLong();
-        final AtomicLong futureAskQty = new AtomicLong();
-        
-        // Флаги наличия данных
-        volatile boolean hasShareData = false;
-        volatile boolean hasFutureData = false;
-
-        /**
-         * Обновление состояния по данным стакана
-         */
-        synchronized void update(String instrumentUid, BigDecimal bidPrice, BigDecimal askPrice, 
-                                long bidQty, long askQty) {
-            // Простая эвристика: если UID содержит "FUT" или заканчивается на цифру - это фьючерс
-            // В реальном проекте лучше использовать явный маппинг
-            if (instrumentUid.contains("FUT") || instrumentUid.matches(".*[0-9]$")) {
-                futureBid.set(bidPrice);
-                futureAsk.set(askPrice);
-                futureBidQty.set(bidQty);
-                futureAskQty.set(askQty);
-                hasFutureData = true;
-            } else {
-                shareBid.set(bidPrice);
-                shareAsk.set(askPrice);
-                shareBidQty.set(bidQty);
-                shareAskQty.set(askQty);
-                hasShareData = true;
-            }
-        }
-
-        /**
-         * Проверка наличия данных по обоим инструментам
-         */
-        boolean hasBothInstruments() {
-            return hasShareData && hasFutureData;
-        }
-    }
 }

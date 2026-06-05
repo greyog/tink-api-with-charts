@@ -15,3 +15,18 @@ spring:
 #    com.github.tink_api_with_charts: DEBUG
 #    ru.ttech.piapi: INFO
 
+trading:
+  bot:
+    lots: 2
+    balance: 1_000_000
+    # Конфигурация списка пар инструментов (новый формат)
+    # Пример для нескольких пар:
+    pairs:
+      - name: "SBER-SBERF"
+        shareUid: "e6123145-9665-43e0-8413-cd61b8aa9b13"
+        futureUid: "9e9c5921-43ac-47a8-b537-ccf32ebc6da3"
+        futureLot: 1
+      - name: "GAZP-GAZPF"
+        shareUid: "962e2a95-02a9-4171-abd7-aa198dbe643a"
+        futureUid: "82b34e5c-30c3-4be2-ba9d-5ba3b37ca99b"
+        futureLot: 1
