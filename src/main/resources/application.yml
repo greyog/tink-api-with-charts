@@ -15,6 +15,21 @@ spring:
 #    com.github.tink_api_with_charts: DEBUG
 #    ru.ttech.piapi: INFO
 
+invest:
+  connector:
+    #    sandbox
+    token: abc
+    sandbox:
+      enabled: true
+    grpc:
+      debug: false
+
+##    share-uid: "87db07bc-0e02-4e29-90bb-05e8ef791d7b" # T
+##    future-uid: "12275713-0583-4add-a4a5-c7dd234d4f34" # TBM6
+#
+#    share-uid: "de82be66-3b9b-4612-9572-61e3c6039013" # TGLD
+#    future-uid: "b347fe28-0d2a-45bf-b3bd-cda8a6ac64e6" # GLDRUBF
+
 trading:
   bot:
     lots: 2

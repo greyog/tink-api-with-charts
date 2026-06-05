@@ -3,6 +3,7 @@ package com.github.tink_api_with_charts.component;
 import com.github.tink_api_with_charts.cinfiguration.TradingProperties;
 import com.github.tink_api_with_charts.entity.PairState;
 import com.github.tink_api_with_charts.service.SpreadHistoryService;
+import jakarta.annotation.PostConstruct;
 import org.jetbrains.annotations.NotNull;
 import org.springframework.stereotype.Component;
 import ru.tinkoff.piapi.contract.v1.InstrumentType;
@@ -37,8 +38,8 @@ public class OrderBookMonitor {
     private final SpreadHistoryService spreadHistoryService;
     private final TradingProperties properties;
 
-    private static final BigDecimal FUTURE_FEE_PERC = BigDecimal.valueOf(0.025);
     private static final BigDecimal FUTURE_FEE_FRAC = BigDecimal.valueOf(0.025).divide(BigDecimal.valueOf(100), 10, RoundingMode.HALF_UP);
+    private static final BigDecimal SHARE_FEE_FRAC = BigDecimal.valueOf(0.04).divide(BigDecimal.valueOf(100), 10, RoundingMode.HALF_UP);
 
     /**
      * Состояние по каждой паре инструментов
@@ -64,7 +65,7 @@ public class OrderBookMonitor {
         this.properties = properties;
     }
 
-//    @PostConstruct
+    @PostConstruct
     public void startMonitoring() {
         log.info("Запуск мониторинга стакана для инструментов");
         
@@ -189,11 +190,13 @@ public class OrderBookMonitor {
         BigDecimal spreadSell = state.getFutureBid().subtract(state.getShareAsk());
         BigDecimal spreadBuy = state.getFutureAsk().subtract(state.getShareBid());
         
-        BigDecimal feeSell = calcFee(state.getFutureBid(), futureLot);
-        BigDecimal feeBuy = calcFee(state.getFutureAsk(), futureLot);
+        BigDecimal feeSellFuture = calcFutureFee(state.getFutureBid(), 1);
+        BigDecimal feeBuyShare = calcShareFee(state.getShareAsk(), futureLot);
+        BigDecimal feeBuyFuture = calcFutureFee(state.getFutureAsk(), 1);
+        BigDecimal feeSellShare = calcShareFee(state.getShareBid(), futureLot);
         
-        spreadSell = spreadSell.subtract(feeSell);
-        spreadBuy = spreadBuy.add(feeBuy);
+        spreadSell = spreadSell.subtract(feeSellFuture).subtract(feeBuyShare);
+        spreadBuy = spreadBuy.add(feeBuyFuture).add(feeSellShare);
         
         log.info("Пара {}: Spread Sell: {}, Spread Buy: {}",
                 pairName,
@@ -201,10 +204,16 @@ public class OrderBookMonitor {
                 spreadBuy);
     }
 
-    private @NotNull BigDecimal calcFee(BigDecimal price, int futureLot) {
+    private @NotNull BigDecimal calcFutureFee(BigDecimal price, int lot) {
         return price
-                .multiply(BigDecimal.valueOf(futureLot))
+                .multiply(BigDecimal.valueOf(lot))
                 .multiply(FUTURE_FEE_FRAC);
+    }
+
+    private @NotNull BigDecimal calcShareFee(BigDecimal price, int lot) {
+        return price
+                .multiply(BigDecimal.valueOf(lot))
+                .multiply(SHARE_FEE_FRAC);
     }
 
     private BigDecimal quotationToBigDecimal(Quotation q) {

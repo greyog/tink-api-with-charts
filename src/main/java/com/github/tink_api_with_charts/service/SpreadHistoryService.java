@@ -14,7 +14,10 @@ import java.time.ZoneOffset;
 @Service
 public class SpreadHistoryService {
 
-    public static final String INSERT_SQL = "INSERT INTO spread_history(pair_name, timestamp, share_bid, share_ask, future_bid, future_ask, future_lot) VALUES (?, ?, ?, ?, ?, ?, ?)";
+    private static final String TABLE_NAME = "spread_history_v2";
+
+    public static final String INSERT_SQL = "INSERT INTO %s(pair_name, timestamp, share_bid, share_ask, future_bid, future_ask, future_lot) VALUES (?, ?, ?, ?, ?, ?, ?)"
+            .formatted(TABLE_NAME);
     private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(SpreadHistoryService.class);
 
     private static final String DB_FILE = "spread_history.db";
@@ -28,7 +31,7 @@ public class SpreadHistoryService {
     private void createSpreadHistoryTable() {
         String url = "jdbc:sqlite:" + DB_FILE;
         String sql = """
-            CREATE TABLE IF NOT EXISTS spread_history (
+            CREATE TABLE IF NOT EXISTS %s (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 pair_name TEXT NOT NULL,
                 timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -38,9 +41,9 @@ public class SpreadHistoryService {
                 future_ask REAL,
                 future_lot INTEGER DEFAULT 1
             );
-            CREATE INDEX IF NOT EXISTS idx_pair_name ON spread_history(pair_name);
-            CREATE INDEX IF NOT EXISTS idx_timestamp ON spread_history(timestamp);
-            """;
+            CREATE INDEX IF NOT EXISTS idx_pair_name ON %s(pair_name);
+            CREATE INDEX IF NOT EXISTS idx_timestamp ON %s(timestamp);
+            """.formatted(TABLE_NAME, TABLE_NAME, TABLE_NAME);
 
         try (Connection conn = DriverManager.getConnection(url)) {
             conn.createStatement().execute(sql);
