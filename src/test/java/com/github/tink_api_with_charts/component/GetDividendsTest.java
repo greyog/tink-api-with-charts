@@ -6,7 +6,10 @@ import ru.ttech.piapi.core.connector.ConnectorConfiguration;
 import ru.ttech.piapi.core.connector.ServiceStubFactory;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
+import java.util.HashMap;
+import java.util.Map;
 
 class GetDividendsTest {
 
@@ -20,11 +23,15 @@ class GetDividendsTest {
         ServiceStubFactory serviceStubFactory = ServiceStubFactory.create(config);
         DividendsComponent dividendsComponent = new DividendsComponent(serviceStubFactory);
         GetDividendsResponse dividends = dividendsComponent.getDividends(INSTRUMENT_UID_A, DATE_FROM, DATE_TO);
+        Map<LocalDate, BigDecimal> dateToDividend = new HashMap<>();
         dividends.getDividendsList().forEach(dividend -> {
             BigDecimal net = dividendsComponent.moneyValueBigDecimal(dividend.getDividendNet());
+            BigDecimal netMinusFee = net.multiply(BigDecimal.valueOf(0.87)).setScale(2, RoundingMode.DOWN);
             LocalDate paymentDate = dividendsComponent.toLocalDate(dividend.getLastBuyDate());
-            System.out.println("paymentDate = " + paymentDate + ", net = " + net);
+            dateToDividend.put(paymentDate, netMinusFee);
         });
+        System.out.println("dateToDividend = " + dateToDividend);
+        System.out.println("dateToDividend.get(LocalDate.of(2025, 05, 15)) = " + dateToDividend.get(LocalDate.of(2025, 05, 15)));
     }
 
 }

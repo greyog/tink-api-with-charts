@@ -17,7 +17,6 @@ import org.ta4j.core.BarSeries;
 import org.ta4j.core.analysis.cost.LinearTransactionCostModel;
 import org.ta4j.core.backtest.BarSeriesManager;
 import org.ta4j.core.backtest.TradeOnCurrentCloseModel;
-import org.ta4j.core.num.NumFactory;
 import ru.tinkoff.piapi.contract.v1.CandleInterval;
 import ru.ttech.piapi.core.connector.ConnectorConfiguration;
 import ru.ttech.piapi.strategy.BacktestStrategyFactory;
@@ -36,18 +35,19 @@ import java.util.concurrent.TimeUnit;
 
 public class MultiAssetRebalanceBacktest {
 
-    public static final CandleInterval CANDLE_INTERVAL = CandleInterval.CANDLE_INTERVAL_5_MIN;
+    public static final CandleInterval CANDLE_INTERVAL = CandleInterval.CANDLE_INTERVAL_4_HOUR;
     public static final LocalDate DATE_FROM = LocalDate.of(2025, 1, 1);
     public static final LocalDate DATE_TO = LocalDate.of(2026, 6, 23);
     private static final Logger log = LoggerFactory.getLogger(MultiAssetRebalanceBacktest.class);
 
     // ⚙️ ПАРАМЕТРЫ ПОРТФЕЛЯ
     private static final double INITIAL_CAPITAL = 1_000_000.0;
-    private static final double TARGET_ALLOC_A = 0.50; // 50% Актив A
-    private static final double TARGET_ALLOC_B = 0.50; // 50% Актив B
+    private static final double TARGET_ALLOC_A = 0.33; // 50% Актив A
+    private static final double TARGET_ALLOC_B = 0.33; // 50% Актив B
     private static final double REBALANCE_THRESHOLD = 0.01; // ±1% порог
-    private static final String INSTRUMENT_UID_A = "87db07bc-0e02-4e29-90bb-05e8ef791d7b"; // ваш uid
-    private static final String INSTRUMENT_UID_B = "498ec3ff-ef27-4729-9703-a5aac48d5789";                // второй uid
+    private static final String INSTRUMENT_UID_A = "e6123145-9665-43e0-8413-cd61b8aa9b13";  // sber
+//    private static final String INSTRUMENT_UID_A = "87db07bc-0e02-4e29-90bb-05e8ef791d7b"; //T
+    private static final String INSTRUMENT_UID_B = "498ec3ff-ef27-4729-9703-a5aac48d5789"; // TMON
 
     public static void main(String[] args) {
         var configuration = ConnectorConfiguration.loadPropertiesFromFile("config/application.yml");
@@ -61,16 +61,27 @@ public class MultiAssetRebalanceBacktest {
             System.out.println("seriesA.getBarCount() = " + seriesA.getBarCount());
             System.out.println("seriesB.getBarCount() = " + seriesB.getBarCount());
             int a = 0, b = 0;
+            List<Bar> alignedBarsA = new ArrayList<>();
+            List<Bar> alignedBarsB = new ArrayList<>();
             while (a < seriesA.getBarCount() && b < seriesB.getBarCount()) {
                 Bar aBar = seriesA.getBar(a);
                 Bar bBar = seriesB.getBar(b);
-                a++;
-                b++;
+                if (aBar.getBeginTime().isAfter(bBar.getBeginTime())) {
+                    b++;
+                } else if (aBar.getBeginTime().isBefore(bBar.getBeginTime())) {
+                    a++;
+                } else {
+                    alignedBarsA.add(aBar);
+                    alignedBarsB.add(bBar);
+                    a++;
+                    b++;
+                }
             }
-            if (seriesA.getBarCount() != seriesB.getBarCount()) {
+            if (alignedBarsA.size() != alignedBarsB.size()) {
                 throw new IllegalStateException("📉 Серии не синхронизированы по длине: A=" + seriesA.getBarCount() + ", B=" + seriesB.getBarCount());
             }
 
+            visualizeTwoAssetPrices(alignedBarsA, alignedBarsB);
             // 🔍 Запуск многоактивного симулятора
 //            simulateMultiAssetPortfolio(seriesA, seriesB);
 
@@ -109,7 +120,6 @@ public class MultiAssetRebalanceBacktest {
     }
 
     private static void simulateMultiAssetPortfolio(BarSeries seriesA, BarSeries seriesB) {
-        NumFactory numFactory = seriesA.numFactory();
         double cash = INITIAL_CAPITAL;
         int sharesA = 0, sharesB = 0;
         
@@ -182,10 +192,10 @@ public class MultiAssetRebalanceBacktest {
                 finalEquity - INITIAL_CAPITAL, (finalEquity / INITIAL_CAPITAL - 1) * 100, trades.size());
         log.info("📊 Final: Cash={:.2f}, A={:.2f}₽, B={:.2f}₽", cash, sharesA * pricesA.get(pricesA.size()-1), sharesB * pricesB.get(pricesB.size()-1));
 
-        visualizeMultiAsset(timestamps, pricesA, pricesB, equity, trades);
+//        visualizeMultiAsset(timestamps, pricesA, pricesB, equity, trades);
     }
 
-    private static void visualizeMultiAsset(List<Long> timestamps, List<Double> pricesA, List<Double> pricesB,
+    private static void visualizeMultiAsset(List<Long> timestamps, List<Bar> barsA, List<Bar> barsB,
                                             List<Double> equity, List<String> trades) {
         XYSeries priceSeriesA = new XYSeries("Актив A");
         XYSeries priceSeriesB = new XYSeries("Актив B");
@@ -193,14 +203,16 @@ public class MultiAssetRebalanceBacktest {
         XYSeries buySeries = new XYSeries("Покупки");
         XYSeries sellSeries = new XYSeries("Продажи");
 
-        for (int i = 0; i < timestamps.size(); i++) {
-            long ts = timestamps.get(i);
-            priceSeriesA.add(ts, pricesA.get(i));
-            priceSeriesB.add(ts, pricesB.get(i));
-            equitySeries.add(ts, equity.get(i));
+        for (int i = 0; i < barsA.size(); i++) {
+            Bar aBar = barsA.get(i);
+            Bar bBar = barsB.get(i);
+            long second = timestamps.get(i);
+            priceSeriesA.add(second, aBar.getClosePrice().bigDecimalValue());
+            priceSeriesB.add(second, bBar.getClosePrice().bigDecimalValue());
+            equitySeries.add(second, equity.get(i));
             String t = trades.get(i);
-            if (t.contains("BUY")) buySeries.add(ts, equity.get(i));
-            else if (t.contains("SELL")) sellSeries.add(ts, equity.get(i));
+            if (t.contains("BUY")) buySeries.add(second, equity.get(i));
+            else if (t.contains("SELL")) sellSeries.add(second, equity.get(i));
         }
 
         var dataset = new XYSeriesCollection();
@@ -241,6 +253,58 @@ public class MultiAssetRebalanceBacktest {
 
         plot.setRenderer(0, prA); plot.setRenderer(1, prB); plot.setRenderer(2, prE);
         plot.setRenderer(3, trB); plot.setRenderer(4, trS);
+
+        try {
+            ChartUtils.saveChartAsPNG(new File("backtest_multiasset.png"), chart, 1600, 900);
+        } catch (Exception ignored) {}
+
+        SwingUtilities.invokeLater(() -> {
+            JFrame frame = new JFrame("Multi-Asset Rebalance");
+            frame.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
+            frame.setContentPane(new ChartPanel(chart) {
+                public Dimension getPreferredSize() { return new Dimension(1600, 900); }
+            });
+            frame.pack(); frame.setLocationRelativeTo(null); frame.setVisible(true);
+        });
+    }
+
+    private static void visualizeTwoAssetPrices(List<Bar> barsA, List<Bar> barsB) {
+        XYSeries priceSeriesA = new XYSeries("Актив A");
+        XYSeries priceSeriesB = new XYSeries("Актив B");
+
+        for (int i = 0; i < barsA.size(); i++) {
+            Bar aBar = barsA.get(i);
+            Bar bBar = barsB.get(i);
+            long second = aBar.getBeginTime().getEpochSecond();
+            priceSeriesA.add(second, aBar.getClosePrice().bigDecimalValue());
+            priceSeriesB.add(second, bBar.getClosePrice().bigDecimalValue());
+        }
+
+        var dataset = new XYSeriesCollection();
+        dataset.addSeries(priceSeriesA);
+        dataset.addSeries(priceSeriesB);
+
+        JFreeChart chart = ChartFactory.createXYLineChart(
+                "Multi-Asset 50/50",
+                "Время (s)", "Цена (₽)", dataset,
+                PlotOrientation.VERTICAL, true, true, false);
+
+        XYPlot plot = chart.getXYPlot();
+        NumberAxis primaryAxis = new NumberAxis("Цена/Акции A (₽)");
+        NumberAxis secondaryAxis = new NumberAxis("Цена/Акции B (₽)");
+        plot.setRangeAxis(0, primaryAxis);
+        plot.setRangeAxis(1, secondaryAxis);
+
+        plot.setDataset(0, new XYSeriesCollection(priceSeriesA));
+        plot.setDataset(1, new XYSeriesCollection(priceSeriesB));
+
+        plot.mapDatasetToRangeAxis(0, 0);
+        plot.mapDatasetToRangeAxis(1, 1);
+
+        XYLineAndShapeRenderer prA = new XYLineAndShapeRenderer(); prA.setSeriesPaint(0, Color.BLUE);
+        XYLineAndShapeRenderer prB = new XYLineAndShapeRenderer(); prB.setSeriesPaint(0, Color.MAGENTA);
+
+        plot.setRenderer(0, prA); plot.setRenderer(1, prB);
 
         try {
             ChartUtils.saveChartAsPNG(new File("backtest_multiasset.png"), chart, 1600, 900);
