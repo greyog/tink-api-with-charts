@@ -25,6 +25,10 @@ import ru.ttech.piapi.strategy.candle.backtest.CandleStrategyBacktestConfigurati
 
 import javax.swing.*;
 import java.awt.*;
+import java.awt.geom.Ellipse2D;
+import java.awt.font.FontRenderContext;
+import java.awt.font.TextLayout;
+import java.awt.geom.AffineTransform;
 import java.io.File;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -39,21 +43,21 @@ import java.util.concurrent.TimeUnit;
 
 public class MultiAssetTmonRebalanceBacktest {
 
-    public static final CandleInterval CANDLE_INTERVAL = CandleInterval.CANDLE_INTERVAL_4_HOUR;
-    public static final LocalDate DATE_FROM = LocalDate.of(2025, 1, 1);
+    public static final CandleInterval CANDLE_INTERVAL = CandleInterval.CANDLE_INTERVAL_15_MIN;
+    public static final LocalDate DATE_FROM = LocalDate.of(2024, 1, 1);
     public static final LocalDate DATE_TO = LocalDate.of(2026, 6, 23);
     private static final Logger log = LoggerFactory.getLogger(MultiAssetTmonRebalanceBacktest.class);
 
     // ⚙️ ПАРАМЕТРЫ ПОРТФЕЛЯ
     private static final double INITIAL_CAPITAL = 1_000_000.0;
-    private static final double TARGET_ALLOC_A = 0.50; // 50% Актив A
+    private static final double TARGET_ALLOC_A = 0.30; // 50% Актив A
     //    private static final double TARGET_ALLOC_B = 0.33; // 50% Актив B
-    private static final double REBALANCE_THRESHOLD = 0.01; // ±1% порог
-    private static final double FEE = 0.0025; // Комиссия за транзакцию
+    private static final double REBALANCE_THRESHOLD = 0.005; // ±1% порог
+    private static final double FEE = 0.004; // Комиссия за транзакцию
     private static final String INSTRUMENT_UID_A = "e6123145-9665-43e0-8413-cd61b8aa9b13";  // sber
     //    private static final String INSTRUMENT_UID_A = "87db07bc-0e02-4e29-90bb-05e8ef791d7b"; //T
-    private static final String INSTRUMENT_UID_B = "498ec3ff-ef27-4729-9703-a5aac48d5789"; // TMON
-//    private static final String INSTRUMENT_UID_B = "a240edc6-a605-44b3-9801-37b9f7c3d1ff"; // LQDT
+//    private static final String INSTRUMENT_UID_B = "498ec3ff-ef27-4729-9703-a5aac48d5789"; // TMON
+    private static final String INSTRUMENT_UID_B = "a240edc6-a605-44b3-9801-37b9f7c3d1ff"; // LQDT
 //
 
     public static void main(String[] args) {
@@ -200,14 +204,26 @@ public class MultiAssetTmonRebalanceBacktest {
         }
 
         long tradesCount = trades.stream()
-                .filter(s -> !s.isEmpty())
+                .filter(s -> !s.isBlank())
                 .count();
 
         double finalEquity = equity.isEmpty() ? INITIAL_CAPITAL : equity.getLast();
+        double netPnl = finalEquity - INITIAL_CAPITAL;
+        double returnPercent = (finalEquity / INITIAL_CAPITAL - 1) * 100;
+        double valueA = sharesA * pricesA.getLast();
+        double valueB = sharesB * pricesB.getLast();
+
         log.info("✅ Multi-Asset Rebalance Complete");
-        log.info("💰 Net PnL: {:.2f} | 📈 Return: {:.2f}% | 📦 Trades: {}",
-                finalEquity - INITIAL_CAPITAL, (finalEquity / INITIAL_CAPITAL - 1) * 100, tradesCount);
-        log.info("📊 Final: Cash={:.2f}, A={:.2f}₽, B={:.2f}₽", cash, sharesA * pricesA.getLast(), sharesB * pricesB.getLast());
+        LocalDate actualStartDate = LocalDate.ofInstant(Instant.ofEpochSecond(timestamps.getFirst()), ZoneOffset.UTC);
+        log.info("actualStartDate = {}", actualStartDate);
+        log.info("💰 Net PnL: {} | 📈 Return: {}% | 📦 Trades: {}",
+                String.format("%.2f", netPnl),
+                String.format("%.2f", returnPercent),
+                tradesCount);
+        log.info("📊 Final: Cash={}, A={}₽, B={}₽",
+                String.format("%.2f", cash),
+                String.format("%.2f", valueA),
+                String.format("%.2f", valueB));
 
         visualizeMultiAsset(timestamps, barsA, barsB, equity, trades);
     }
@@ -245,13 +261,15 @@ public class MultiAssetTmonRebalanceBacktest {
         dataset.addSeries(dividendSeries);
 
         JFreeChart chart = ChartFactory.createXYLineChart(
-                "Multi-Asset 50/50 | PnL: " + String.format("%.2f", equity.get(equity.size()-1) - INITIAL_CAPITAL),
-                "Время (ms)", "Цена/Портфель (₽)", dataset,
+                "Multi-Asset 50/50 | PnL: " + String.format("%.2f", equity.getLast() - INITIAL_CAPITAL),
+                "Время (s)", "Цена/Портфель (₽)", dataset,
                 PlotOrientation.VERTICAL, true, true, false);
 
         XYPlot plot = chart.getXYPlot();
         NumberAxis primaryAxis = new NumberAxis("Цена/Акции (₽)");
+        primaryAxis.setAutoRangeIncludesZero(false);
         NumberAxis secondaryAxis = new NumberAxis("Стоимость портфеля (₽)");
+        secondaryAxis.setAutoRangeIncludesZero(false);
         plot.setRangeAxis(0, primaryAxis);
         plot.setRangeAxis(1, secondaryAxis);
 
@@ -270,11 +288,17 @@ public class MultiAssetTmonRebalanceBacktest {
         plot.mapDatasetToRangeAxis(5, 1);
 
         XYLineAndShapeRenderer prA = new XYLineAndShapeRenderer(); prA.setSeriesPaint(0, Color.BLUE);
+// Создаем маленький круг (диаметр 6 пикселей, смещенный на -3, чтобы центр был в точке данных)
+        prA.setSeriesShape(0, new Ellipse2D.Double(-1.0, -1.0, 1.0, 1.0));
         XYLineAndShapeRenderer prB = new XYLineAndShapeRenderer(); prB.setSeriesPaint(0, Color.MAGENTA);
         XYLineAndShapeRenderer prE = new XYLineAndShapeRenderer(); prE.setSeriesPaint(0, Color.CYAN);
+        prE.setSeriesShape(0, new Ellipse2D.Double(-1.0, -1.0, 0.5, 0.5));
         XYLineAndShapeRenderer trB = new XYLineAndShapeRenderer(); trB.setSeriesPaint(0, Color.GREEN);
+        trB.setSeriesShape(0, createLetterShape('B', 12));
         XYLineAndShapeRenderer trS = new XYLineAndShapeRenderer(); trS.setSeriesPaint(0, Color.RED);
+        trS.setSeriesShape(0, createLetterShape('S', 12));
         XYLineAndShapeRenderer trD = new XYLineAndShapeRenderer(); trD.setSeriesPaint(0, Color.PINK);
+        trD.setSeriesShape(0, createLetterShape('D', 12));
 
         plot.setRenderer(0, prA);
         plot.setRenderer(1, prB);
@@ -348,4 +372,13 @@ public class MultiAssetTmonRebalanceBacktest {
             frame.pack(); frame.setLocationRelativeTo(null); frame.setVisible(true);
         });
     }
+
+    // Метод для создания Shape из буквы
+    public static Shape createLetterShape(char letter, int fontSize) {
+        Font font = new Font(Font.SANS_SERIF, Font.BOLD, fontSize);
+        FontRenderContext frc = new FontRenderContext(new AffineTransform(), true, true);
+        TextLayout layout = new TextLayout(String.valueOf(letter), font, frc);
+        return layout.getOutline(null);
+    }
+
 }
