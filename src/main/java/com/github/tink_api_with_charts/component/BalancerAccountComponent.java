@@ -48,7 +48,8 @@ public class BalancerAccountComponent {
     public BalancerAccountComponent(
             BalancerProperties properties,
             ConnectorConfiguration configuration,
-            ServiceStubFactory serviceStubFactory, BalancerStateService balancerStateService
+            ServiceStubFactory serviceStubFactory,
+            BalancerStateService balancerStateService
     ) {
         this.properties = properties;
         this.configuration = configuration;

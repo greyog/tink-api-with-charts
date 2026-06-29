@@ -2,7 +2,6 @@ package com.github.tink_api_with_charts.component;
 
 import com.github.tink_api_with_charts.cinfiguration.BalancerProperties;
 import com.github.tink_api_with_charts.service.BalancerStateService;
-import jakarta.annotation.PostConstruct;
 import org.springframework.stereotype.Component;
 import ru.tinkoff.piapi.contract.v1.Order;
 import ru.tinkoff.piapi.contract.v1.OrderBook;
@@ -19,9 +18,9 @@ import java.util.HashSet;
 import java.util.Set;
 
 @Component
-public class MonoBalancerOrderBookMonitor {
+public class BalancerOrderBookMonitor {
 
-    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(MonoBalancerOrderBookMonitor.class);
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(BalancerOrderBookMonitor.class);
 
     public static final ZoneId ZONE_ID = ZoneId.of("Europe/Moscow");
     public static final LocalTime SESSION_1_START = LocalTime.of(7, 0, 0);
@@ -35,14 +34,14 @@ public class MonoBalancerOrderBookMonitor {
 
     private static final double FEE = 0.0;
 
-    public MonoBalancerOrderBookMonitor(MarketDataStreamManager marketDataStreamManager,
-                                        BalancerProperties properties, BalancerStateService balancerStateService) {
+    public BalancerOrderBookMonitor(MarketDataStreamManager marketDataStreamManager,
+                                    BalancerProperties properties, BalancerStateService balancerStateService) {
         this.marketDataStreamManager = marketDataStreamManager;
         this.properties = properties;
         this.balancerStateService = balancerStateService;
     }
 
-    @PostConstruct
+//    @PostConstruct
     public void startMonitoring() {
         log.info("Запуск мониторинга стакана для инструментов");
         
