@@ -15,9 +15,10 @@ public class BalancerService {
         this.properties = properties;
     }
 
-    public void handleStateChange(BigDecimal cashValue,
+    public void handleStateChange(String trigger, BigDecimal cashValue,
                                   long shareQty, BigDecimal shareBidPrice,
                                   long cashEtfQty, BigDecimal cashEtfBidPrice) {
-        log.info("BalancerService.handleStateChange");
+        log.info("BalancerService.handleStateChange. Trigger: {}, CashValue: {}, Share qty: {}, share bid: {}, cash ETF qty: {}, cash ETF bid: {}",
+                trigger, cashValue, shareQty, shareBidPrice, cashEtfQty, cashEtfBidPrice);
     }
 }

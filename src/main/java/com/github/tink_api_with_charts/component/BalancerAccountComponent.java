@@ -31,10 +31,10 @@ import ru.ttech.piapi.core.helpers.NumberMapper;
 import java.math.BigDecimal;
 
 @Component
-public class TradingAccountComponent {
+public class BalancerAccountComponent {
 
     public static final int INITIAL_SANDBOX_BALANCE = 1_000_000;
-    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(TradingAccountComponent.class);
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(BalancerAccountComponent.class);
 
     private final BalancerProperties properties;
     private final ConnectorConfiguration configuration;
@@ -45,7 +45,7 @@ public class TradingAccountComponent {
 
     private String tradingAccountId;
 
-    public TradingAccountComponent(
+    public BalancerAccountComponent(
             BalancerProperties properties,
             ConnectorConfiguration configuration,
             ServiceStubFactory serviceStubFactory, BalancerStateService balancerStateService
@@ -58,9 +58,9 @@ public class TradingAccountComponent {
         this.balancerStateService = balancerStateService;
     }
 
-    public static TradingAccountComponent getInstance(ConnectorConfiguration config) {
+    public static BalancerAccountComponent getInstance(ConnectorConfiguration config) {
         ServiceStubFactory ssf = ServiceStubFactory.create(config);
-        return new TradingAccountComponent(null, config, ssf, null);
+        return new BalancerAccountComponent(null, config, ssf, null);
     }
 
     @PostConstruct
@@ -73,12 +73,20 @@ public class TradingAccountComponent {
         BigDecimal rubCash = NumberUtils.moneyValueBigDecimal(rubMoneyValue);
         balancerStateService.updateCashValue(rubCash);
 
-        Long shareQty = positions.getSecuritiesList().stream()
+        long shareQty = positions.getSecuritiesList().stream()
                 .filter(positionsSecurities -> positionsSecurities.getInstrumentUid().equals(properties.getShareUid()))
                 .findFirst()
                 .map(PositionsSecurities::getBalance)
                 .orElse(0L);
         balancerStateService.updateShareQty(shareQty);
+
+        long cashEtfQty = positions.getSecuritiesList().stream()
+                .filter(positionsSecurities -> positionsSecurities.getInstrumentUid().equals(properties.getCashEtfUid()))
+                .findFirst()
+                .map(PositionsSecurities::getBalance)
+                .orElse(0L);
+        balancerStateService.updateCashEtfQty(cashEtfQty);
+
         if (configuration.isSandboxEnabled()) {
             GetAccountsResponse sandboxAccounts = sandboxService.getStub().getSandboxAccounts(
                     GetAccountsRequest.newBuilder()

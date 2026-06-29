@@ -72,11 +72,17 @@ public class MonoBalancerOrderBookMonitor {
 
         BigDecimal bestBidPrice = quotationToBigDecimal(bestBid.getPrice());
         BigDecimal bestAskPrice = quotationToBigDecimal(bestAsk.getPrice());
-        long bestBidVolume = bestBid.getQuantity();
-        long bestAskVolume = bestAsk.getQuantity();
+        long bestBidQty = bestBid.getQuantity();
+        long bestAskQty = bestAsk.getQuantity();
 
         String instrumentUid = orderBook.getInstrumentUid();
-        balancerStateService.updatePriceData(instrumentUid, bestBidPrice, bestAskPrice);
+        if (instrumentUid.equals(properties.getShareUid())) {
+            balancerStateService.updateSharePrice(bestBidPrice, bestAskPrice);
+        } else if (instrumentUid.equals(properties.getCashEtfUid())) {
+            balancerStateService.updateCashEtfPrice(bestBidPrice, bestAskPrice);
+        } else {
+            log.warn("Unknown instrument UID: {}", instrumentUid);
+        }
     }
 
     private BigDecimal quotationToBigDecimal(Quotation q) {

@@ -4,7 +4,6 @@ import com.github.tink_api_with_charts.cinfiguration.TradingProperties;
 import com.github.tink_api_with_charts.entity.PairState;
 import com.github.tink_api_with_charts.service.SpreadHistoryService;
 import com.github.tink_api_with_charts.utils.NumberUtils;
-import jakarta.annotation.PostConstruct;
 import org.jetbrains.annotations.NotNull;
 import org.springframework.stereotype.Component;
 import ru.tinkoff.piapi.contract.v1.InstrumentType;
@@ -65,7 +64,7 @@ public class OrderBookMonitor {
         this.properties = properties;
     }
 
-    @PostConstruct
+//    @PostConstruct
     public void startMonitoring() {
         log.info("Запуск мониторинга стакана для инструментов");
         
