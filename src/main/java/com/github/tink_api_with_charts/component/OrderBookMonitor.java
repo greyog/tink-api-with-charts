@@ -3,6 +3,7 @@ package com.github.tink_api_with_charts.component;
 import com.github.tink_api_with_charts.cinfiguration.TradingProperties;
 import com.github.tink_api_with_charts.entity.PairState;
 import com.github.tink_api_with_charts.service.SpreadHistoryService;
+import com.github.tink_api_with_charts.utils.NumberUtils;
 import jakarta.annotation.PostConstruct;
 import org.jetbrains.annotations.NotNull;
 import org.springframework.stereotype.Component;
@@ -10,7 +11,6 @@ import ru.tinkoff.piapi.contract.v1.InstrumentType;
 import ru.tinkoff.piapi.contract.v1.Order;
 import ru.tinkoff.piapi.contract.v1.OrderBook;
 import ru.tinkoff.piapi.contract.v1.OrderBookType;
-import ru.tinkoff.piapi.contract.v1.Quotation;
 import ru.ttech.piapi.core.impl.marketdata.MarketDataStreamManager;
 import ru.ttech.piapi.core.impl.marketdata.subscription.Instrument;
 
@@ -134,8 +134,8 @@ public class OrderBookMonitor {
         Order bestBid = orderBook.getBids(0);
         Order bestAsk = orderBook.getAsks(0);
 
-        BigDecimal bestBidPrice = quotationToBigDecimal(bestBid.getPrice());
-        BigDecimal bestAskPrice = quotationToBigDecimal(bestAsk.getPrice());
+        BigDecimal bestBidPrice = NumberUtils.quotationToBigDecimal(bestBid.getPrice());
+        BigDecimal bestAskPrice = NumberUtils.quotationToBigDecimal(bestAsk.getPrice());
         long bestBidVolume = bestBid.getQuantity();
         long bestAskVolume = bestAsk.getQuantity();
 
@@ -214,13 +214,6 @@ public class OrderBookMonitor {
         return price
                 .multiply(BigDecimal.valueOf(lot))
                 .multiply(SHARE_FEE_FRAC);
-    }
-
-    private BigDecimal quotationToBigDecimal(Quotation q) {
-        BigDecimal units = BigDecimal.valueOf(q.getUnits());
-        BigDecimal nano = BigDecimal.valueOf(q.getNano(), 9);
-        BigDecimal result = units.add(nano);
-        return result.setScale(2, RoundingMode.HALF_UP);
     }
 
     private boolean checkTradingTime() {

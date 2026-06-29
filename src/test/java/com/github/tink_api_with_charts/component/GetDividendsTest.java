@@ -1,5 +1,6 @@
 package com.github.tink_api_with_charts.component;
 
+import com.github.tink_api_with_charts.utils.NumberUtils;
 import org.junit.jupiter.api.Test;
 import ru.tinkoff.piapi.contract.v1.GetDividendsResponse;
 import ru.ttech.piapi.core.connector.ConnectorConfiguration;
@@ -25,9 +26,9 @@ class GetDividendsTest {
         GetDividendsResponse dividends = dividendsComponent.getDividends(INSTRUMENT_UID_A, DATE_FROM, DATE_TO);
         Map<LocalDate, BigDecimal> dateToDividend = new HashMap<>();
         dividends.getDividendsList().forEach(dividend -> {
-            BigDecimal net = dividendsComponent.moneyValueBigDecimal(dividend.getDividendNet());
+            BigDecimal net = NumberUtils.moneyValueBigDecimal(dividend.getDividendNet());
             BigDecimal netMinusFee = net.multiply(BigDecimal.valueOf(0.87)).setScale(2, RoundingMode.DOWN);
-            LocalDate paymentDate = dividendsComponent.toLocalDate(dividend.getLastBuyDate());
+            LocalDate paymentDate = NumberUtils.toLocalDate(dividend.getLastBuyDate());
             dateToDividend.put(paymentDate, netMinusFee);
         });
         System.out.println("dateToDividend = " + dateToDividend);

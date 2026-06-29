@@ -31,6 +31,12 @@ invest:
 #    future-uid: "b347fe28-0d2a-45bf-b3bd-cda8a6ac64e6" # GLDRUBF
 
 trading:
+  balancer:
+    accountId: "123456"
+    targetShareAllocation: 0.5
+    rebalanceThreshold: 0.01
+    shareUid: "87db07bc-0e02-4e29-90bb-05e8ef791d7b" # T
+    cashEtfUid: "498ec3ff-ef27-4729-9703-a5aac48d5789" # TMON
   bot:
     lots: 2
     balance: 1_000_000

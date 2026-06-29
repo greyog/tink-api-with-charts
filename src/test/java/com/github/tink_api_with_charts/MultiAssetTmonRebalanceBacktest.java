@@ -44,20 +44,21 @@ import java.util.concurrent.TimeUnit;
 public class MultiAssetTmonRebalanceBacktest {
 
     public static final CandleInterval CANDLE_INTERVAL = CandleInterval.CANDLE_INTERVAL_15_MIN;
-    public static final LocalDate DATE_FROM = LocalDate.of(2024, 1, 1);
+    public static final LocalDate DATE_FROM = LocalDate.of(2025, 1, 1);
     public static final LocalDate DATE_TO = LocalDate.of(2026, 6, 23);
     private static final Logger log = LoggerFactory.getLogger(MultiAssetTmonRebalanceBacktest.class);
 
     // ⚙️ ПАРАМЕТРЫ ПОРТФЕЛЯ
     private static final double INITIAL_CAPITAL = 1_000_000.0;
-    private static final double TARGET_ALLOC_A = 0.30; // 50% Актив A
+    private static final double TARGET_ALLOC_A = 0.50; // 50% Актив A
     //    private static final double TARGET_ALLOC_B = 0.33; // 50% Актив B
     private static final double REBALANCE_THRESHOLD = 0.005; // ±1% порог
     private static final double FEE = 0.004; // Комиссия за транзакцию
-    private static final String INSTRUMENT_UID_A = "e6123145-9665-43e0-8413-cd61b8aa9b13";  // sber
-    //    private static final String INSTRUMENT_UID_A = "87db07bc-0e02-4e29-90bb-05e8ef791d7b"; //T
-//    private static final String INSTRUMENT_UID_B = "498ec3ff-ef27-4729-9703-a5aac48d5789"; // TMON
-    private static final String INSTRUMENT_UID_B = "a240edc6-a605-44b3-9801-37b9f7c3d1ff"; // LQDT
+    private static final String INSTRUMENT_UID_A = "02cfdf61-6298-4c0f-a9ca-9cabc82afaf3";  // lkoh
+//    private static final String INSTRUMENT_UID_A = "e6123145-9665-43e0-8413-cd61b8aa9b13";  // sber
+//        private static final String INSTRUMENT_UID_A = "87db07bc-0e02-4e29-90bb-05e8ef791d7b"; //T
+    private static final String INSTRUMENT_UID_B = "498ec3ff-ef27-4729-9703-a5aac48d5789"; // TMON
+//    private static final String INSTRUMENT_UID_B = "a240edc6-a605-44b3-9801-37b9f7c3d1ff"; // LQDT
 //
 
     public static void main(String[] args) {
@@ -149,6 +150,7 @@ public class MultiAssetTmonRebalanceBacktest {
 
         for (int i = 0; i < barsA.size(); i++) {
             double priceA = barsA.get(i).getClosePrice().doubleValue();
+//            if (priceA > 1000) priceA = priceA / 10;
             double priceB = barsB.get(i).getClosePrice().doubleValue();
 
             Instant barInstant = barsA.get(i).getBeginTime().atZone(ZoneOffset.UTC).toInstant();
@@ -225,10 +227,10 @@ public class MultiAssetTmonRebalanceBacktest {
                 String.format("%.2f", valueA),
                 String.format("%.2f", valueB));
 
-        visualizeMultiAsset(timestamps, barsA, barsB, equity, trades);
+        visualizeMultiAsset(timestamps, pricesA, pricesB, equity, trades);
     }
 
-    private static void visualizeMultiAsset(List<Long> timestamps, List<Bar> barsA, List<Bar> barsB,
+    private static void visualizeMultiAsset(List<Long> timestamps, List<Double> pricesA, List<Double> pricesB,
                                             List<Double> equity, List<String> trades) {
         XYSeries priceSeriesA = new XYSeries("Актив A");
         XYSeries priceSeriesB = new XYSeries("Актив B");
@@ -237,12 +239,12 @@ public class MultiAssetTmonRebalanceBacktest {
         XYSeries sellSeries = new XYSeries("Продажи");
         XYSeries dividendSeries = new XYSeries("Дивиденды");
 
-        for (int i = 0; i < barsA.size(); i++) {
-            Bar aBar = barsA.get(i);
-            Bar bBar = barsB.get(i);
+        for (int i = 0; i < pricesA.size(); i++) {
+            double priceA = pricesA.get(i);
+            double priceB = pricesB.get(i);
             long second = timestamps.get(i);
-            priceSeriesA.add(second, aBar.getClosePrice().bigDecimalValue());
-            priceSeriesB.add(second, bBar.getClosePrice().bigDecimalValue());
+            priceSeriesA.add(second, priceA);
+            priceSeriesB.add(second, priceB);
             equitySeries.add(second, equity.get(i));
             String t = trades.get(i);
             if (t.contains("BUY")) buySeries.add(second, equity.get(i));
