@@ -3,7 +3,6 @@ package com.github.tink_api_with_charts.component;
 import com.github.tink_api_with_charts.cinfiguration.BalancerProperties;
 import com.github.tink_api_with_charts.service.BalancerStateService;
 import com.github.tink_api_with_charts.utils.NumberUtils;
-import jakarta.annotation.PostConstruct;
 import org.springframework.stereotype.Component;
 import ru.tinkoff.piapi.contract.v1.AccountStatus;
 import ru.tinkoff.piapi.contract.v1.GetAccountValuesRequest;
@@ -64,7 +63,7 @@ public class BalancerAccountComponent {
         return new BalancerAccountComponent(null, config, ssf, null);
     }
 
-    @PostConstruct
+//    @PostConstruct
     public void init() {
         PositionsResponse positions = getPositions(properties.getAccountId());
         MoneyValue rubMoneyValue = positions.getMoneyList().stream()
