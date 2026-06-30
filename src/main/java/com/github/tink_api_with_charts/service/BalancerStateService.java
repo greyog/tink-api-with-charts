@@ -30,15 +30,15 @@ public class BalancerStateService {
 
     public void updateSharePrice(BigDecimal bid, BigDecimal ask) {
         String triggerType = "share";
-        updateIfNeeded(bid, ask, shareBid, shareAsk, triggerType);
+        updatePricesIfNeeded(bid, ask, shareBid, shareAsk, triggerType);
     }
 
     public void updateCashEtfPrice(BigDecimal bid, BigDecimal ask) {
         String triggerType = "cash ETF";
-        updateIfNeeded(bid, ask, cashEtfBid, cashEtfAsk, triggerType);
+        updatePricesIfNeeded(bid, ask, cashEtfBid, cashEtfAsk, triggerType);
     }
 
-    private void updateIfNeeded(BigDecimal bid, BigDecimal ask, AtomicReference<BigDecimal> oldBidRef, AtomicReference<BigDecimal> oldAskRef, String triggerType) {
+    private void updatePricesIfNeeded(BigDecimal bid, BigDecimal ask, AtomicReference<BigDecimal> oldBidRef, AtomicReference<BigDecimal> oldAskRef, String triggerType) {
         BigDecimal oldBid = oldBidRef.get();
         BigDecimal oldAsk = oldAskRef.get();
         boolean equalsBid = Objects.equals(oldBid, bid);
@@ -48,14 +48,14 @@ public class BalancerStateService {
         }
         if (!equalsBid && equalsAsk) {
             oldBidRef.set(bid);
-            notifyBalancerService("update %s bid".formatted(triggerType));
+            notifyBalancerService("%s bid".formatted(triggerType));
         } else if (equalsBid && !equalsAsk) {
             oldAskRef.set(ask);
-            notifyBalancerService("update %s ask".formatted(triggerType));
+            notifyBalancerService("%s ask".formatted(triggerType));
         } else {
             oldBidRef.set(bid);
             oldAskRef.set(ask);
-            notifyBalancerService("update %s bid ask".formatted(triggerType));
+            notifyBalancerService("%s bid ask".formatted(triggerType));
         }
     }
 
@@ -63,7 +63,7 @@ public class BalancerStateService {
         BigDecimal oldValue = cashValue.get();
         if (!Objects.equals(oldValue, newValue)) {
             cashValue.set(newValue);
-            notifyBalancerService("updateCashValue");
+            notifyBalancerService("cash value");
         }
     }
 
@@ -71,7 +71,7 @@ public class BalancerStateService {
         Long oldValue = shareQty.get();
         if (!Objects.equals(oldValue, newQty)) {
             shareQty.set(newQty);
-            notifyBalancerService("updateShareQty");
+            notifyBalancerService("share qty");
         }
     }
 
@@ -79,7 +79,7 @@ public class BalancerStateService {
         Long oldValue = cashEtfQty.get();
         if (!Objects.equals(oldValue, newQty)) {
             cashEtfQty.set(newQty);
-            notifyBalancerService("updateCashEtfQty");
+            notifyBalancerService("cash ETF Qty");
         }
     }
 

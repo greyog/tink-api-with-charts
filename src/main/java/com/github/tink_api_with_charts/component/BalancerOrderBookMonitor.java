@@ -2,6 +2,7 @@ package com.github.tink_api_with_charts.component;
 
 import com.github.tink_api_with_charts.cinfiguration.BalancerProperties;
 import com.github.tink_api_with_charts.service.BalancerStateService;
+import jakarta.annotation.PostConstruct;
 import org.springframework.stereotype.Component;
 import ru.tinkoff.piapi.contract.v1.Order;
 import ru.tinkoff.piapi.contract.v1.OrderBook;
@@ -41,7 +42,7 @@ public class BalancerOrderBookMonitor {
         this.balancerStateService = balancerStateService;
     }
 
-//    @PostConstruct
+    @PostConstruct
     public void startMonitoring() {
         log.info("Запуск мониторинга стакана для инструментов");
         

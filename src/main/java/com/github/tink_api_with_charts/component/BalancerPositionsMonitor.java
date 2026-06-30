@@ -17,6 +17,7 @@ import ru.ttech.piapi.core.connector.streaming.StreamServiceStubFactory;
 import ru.ttech.piapi.core.impl.operations.PositionsStreamWrapperConfiguration;
 
 import java.math.BigDecimal;
+import java.util.Optional;
 import java.util.concurrent.ScheduledExecutorService;
 
 @Component
@@ -59,42 +60,41 @@ public class BalancerPositionsMonitor {
 //        log.info("handlePositionsResponse: {}", positionsResponse);
         switch (positionsResponse.getPayloadCase()) {
             case INITIAL_POSITIONS -> handleInitialPositions(positionsResponse.getInitialPositions());
-            case POSITION -> handlePositionData(positionsResponse.getPosition());
+            case POSITION -> handlePositionUpdate(positionsResponse.getPosition());
             default -> log.warn("Unknown PayloadCase: {}. Response : {}", positionsResponse.getPayloadCase(), positionsResponse);
         }
     }
 
     @SneakyThrows
-    private void handlePositionData(PositionData positionData) {
-//        log.info("handlePositionData: {}", positionData);
-        BigDecimal availableRubValue = positionData.getMoneyList().stream()
+    private void handlePositionUpdate(PositionData positionUpdate) {
+//        log.info("handlePositionData: {}", positionUpdate);
+        Optional<BigDecimal> availableRubValue = positionUpdate.getMoneyList().stream()
                 .map(PositionsMoney::getAvailableValue)
                 .filter(moneyValue -> "rub".equals(moneyValue.getCurrency()))
                 .findFirst()
-                .map(NumberUtils::moneyValueBigDecimal)
-                .orElse(BigDecimal.ZERO);
-        BigDecimal blockedRubValue = positionData.getMoneyList().stream()
+                .map(NumberUtils::moneyValueBigDecimal);
+        Optional<BigDecimal> blockedRubValue = positionUpdate.getMoneyList().stream()
                 .map(PositionsMoney::getBlockedValue)
                 .filter(moneyValue -> "rub".equals(moneyValue.getCurrency()))
                 .findFirst()
-                .map(NumberUtils::moneyValueBigDecimal)
-                .orElse(BigDecimal.ZERO);
-        BigDecimal totalRubValue = availableRubValue.add(blockedRubValue);
-        balancerStateService.updateCashValue(totalRubValue);
+                .map(NumberUtils::moneyValueBigDecimal);
+        if (availableRubValue.isPresent() || blockedRubValue.isPresent()) {
+            BigDecimal totalRubValue = availableRubValue.orElse(BigDecimal.ZERO)
+                    .add(blockedRubValue.orElse(BigDecimal.ZERO));
+            balancerStateService.updateCashValue(totalRubValue);
+        }
 
-        long shareQty = positionData.getSecuritiesList().stream()
+        positionUpdate.getSecuritiesList().stream()
                 .filter(positionsSecurities -> positionsSecurities.getInstrumentUid().equals(properties.getShareUid()))
                 .findFirst()
                 .map(ps -> ps.getBalance() + ps.getBlocked())
-                .orElse(0L);
-        balancerStateService.updateShareQty(shareQty);
+                .ifPresent(balancerStateService::updateShareQty);
 
-        long cashEtfQty = positionData.getSecuritiesList().stream()
+        positionUpdate.getSecuritiesList().stream()
                 .filter(positionsSecurities -> positionsSecurities.getInstrumentUid().equals(properties.getCashEtfUid()))
                 .findFirst()
                 .map(ps -> ps.getBalance() + ps.getBlocked())
-                .orElse(0L);
-        balancerStateService.updateCashEtfQty(cashEtfQty);
+                .ifPresent(balancerStateService::updateCashEtfQty);
     }
 
     @SneakyThrows
