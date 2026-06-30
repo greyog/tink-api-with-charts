@@ -7,6 +7,7 @@ import lombok.SneakyThrows;
 import org.springframework.stereotype.Component;
 import ru.tinkoff.piapi.contract.v1.MoneyValue;
 import ru.tinkoff.piapi.contract.v1.PositionData;
+import ru.tinkoff.piapi.contract.v1.PositionsMoney;
 import ru.tinkoff.piapi.contract.v1.PositionsResponse;
 import ru.tinkoff.piapi.contract.v1.PositionsSecurities;
 import ru.tinkoff.piapi.contract.v1.PositionsStreamRequest;
@@ -55,27 +56,50 @@ public class BalancerPositionsMonitor {
 
     @SneakyThrows
     private void handlePositionsResponse(PositionsStreamResponse positionsResponse) {
-        log.info("handlePositionsResponse: {}", positionsResponse);
+//        log.info("handlePositionsResponse: {}", positionsResponse);
         switch (positionsResponse.getPayloadCase()) {
             case INITIAL_POSITIONS -> handleInitialPositions(positionsResponse.getInitialPositions());
             case POSITION -> handlePositionData(positionsResponse.getPosition());
             default -> log.warn("Unknown PayloadCase: {}. Response : {}", positionsResponse.getPayloadCase(), positionsResponse);
         }
-//        var initialPositions = positionsResponse.getInitialPositions();
-//        handleInitialPositions(initialPositions);
-//        PositionData positionData = positionsResponse.getPosition();
-//        handlePositionData(positionData);
-
     }
 
     @SneakyThrows
     private void handlePositionData(PositionData positionData) {
-        log.info("handlePositionData: {}", positionData); // todo
+//        log.info("handlePositionData: {}", positionData);
+        BigDecimal availableRubValue = positionData.getMoneyList().stream()
+                .map(PositionsMoney::getAvailableValue)
+                .filter(moneyValue -> "rub".equals(moneyValue.getCurrency()))
+                .findFirst()
+                .map(NumberUtils::moneyValueBigDecimal)
+                .orElse(BigDecimal.ZERO);
+        BigDecimal blockedRubValue = positionData.getMoneyList().stream()
+                .map(PositionsMoney::getBlockedValue)
+                .filter(moneyValue -> "rub".equals(moneyValue.getCurrency()))
+                .findFirst()
+                .map(NumberUtils::moneyValueBigDecimal)
+                .orElse(BigDecimal.ZERO);
+        BigDecimal totalRubValue = availableRubValue.add(blockedRubValue);
+        balancerStateService.updateCashValue(totalRubValue);
+
+        long shareQty = positionData.getSecuritiesList().stream()
+                .filter(positionsSecurities -> positionsSecurities.getInstrumentUid().equals(properties.getShareUid()))
+                .findFirst()
+                .map(ps -> ps.getBalance() + ps.getBlocked())
+                .orElse(0L);
+        balancerStateService.updateShareQty(shareQty);
+
+        long cashEtfQty = positionData.getSecuritiesList().stream()
+                .filter(positionsSecurities -> positionsSecurities.getInstrumentUid().equals(properties.getCashEtfUid()))
+                .findFirst()
+                .map(ps -> ps.getBalance() + ps.getBlocked())
+                .orElse(0L);
+        balancerStateService.updateCashEtfQty(cashEtfQty);
     }
 
     @SneakyThrows
     private void handleInitialPositions(PositionsResponse initialPositions) {
-        log.info("handleInitialPositions: {}", initialPositions);
+//        log.info("handleInitialPositions: {}", initialPositions);
         MoneyValue rubMoneyValue = initialPositions.getMoneyList().stream()
                 .filter(moneyValue -> "rub".equals(moneyValue.getCurrency()))
                 .findFirst()
@@ -98,97 +122,4 @@ public class BalancerPositionsMonitor {
         balancerStateService.updateCashEtfQty(cashEtfQty);
     }
 
-//    public static BalancerOperationsMonitor getInstance(ConnectorConfiguration config) {
-//        ServiceStubFactory ssf = ServiceStubFactory.create(config);
-//        return new BalancerOperationsMonitor(null, config, ssf, null);
-//    }
-//
-//    @PostConstruct
-//    public void init() {
-//        PositionsResponse positions = getPositions(properties.getAccountId());
-//        MoneyValue rubMoneyValue = positions.getMoneyList().stream()
-//                .filter(moneyValue -> "rub".equals(moneyValue.getCurrency()))
-//                .findFirst()
-//                .orElseThrow(() -> new IllegalStateException("Currency 'rub' not found between positions"));
-//        BigDecimal rubCash = NumberUtils.moneyValueBigDecimal(rubMoneyValue);
-//        balancerStateService.updateCashValue(rubCash);
-//
-//        long shareQty = positions.getSecuritiesList().stream()
-//                .filter(positionsSecurities -> positionsSecurities.getInstrumentUid().equals(properties.getShareUid()))
-//                .findFirst()
-//                .map(PositionsSecurities::getBalance)
-//                .orElse(0L);
-//        balancerStateService.updateShareQty(shareQty);
-//
-//        long cashEtfQty = positions.getSecuritiesList().stream()
-//                .filter(positionsSecurities -> positionsSecurities.getInstrumentUid().equals(properties.getCashEtfUid()))
-//                .findFirst()
-//                .map(PositionsSecurities::getBalance)
-//                .orElse(0L);
-//        balancerStateService.updateCashEtfQty(cashEtfQty);
-//
-//        if (configuration.isSandboxEnabled()) {
-//            GetAccountsResponse sandboxAccounts = sandboxService.getStub().getSandboxAccounts(
-//                    GetAccountsRequest.newBuilder()
-//                            .setStatus(AccountStatus.ACCOUNT_STATUS_OPEN)
-//                            .build());
-//            if (sandboxAccounts.getAccountsCount() == 0) {
-//                OpenSandboxAccountResponse openSandboxAccountResponse = sandboxService.getStub().openSandboxAccount(
-//                        OpenSandboxAccountRequest.newBuilder()
-//                                .build());
-//                tradingAccountId = openSandboxAccountResponse.getAccountId();
-//            } else {
-//                tradingAccountId = sandboxAccounts.getAccounts(0).getId();
-//            }
-//            payInSandbox();
-//        }
-//    }
-//
-//    private void payInSandbox() {
-//        var balanceRequest = WithdrawLimitsRequest.newBuilder().setAccountId(tradingAccountId).build();
-//        var balanceResponse = sandboxService.callSyncMethod(stub -> stub.getSandboxWithdrawLimits(balanceRequest));
-//        var balance = balanceResponse.getMoneyList().stream().filter(moneyValue -> moneyValue.getCurrency().equals("rub"))
-//                .findFirst()
-//                .map(NumberMapper::moneyValueToBigDecimal)
-//                .orElse(BigDecimal.ZERO);
-//        var configBalance = BigDecimal.valueOf(INITIAL_SANDBOX_BALANCE);
-//        log.info("Баланс: {} (настройка: {})", balance, configBalance);
-//        if (balance.compareTo(BigDecimal.valueOf(INITIAL_SANDBOX_BALANCE)) < 0) {
-//            var amount = configBalance.subtract(balance);
-//            var payInRequest = SandboxPayInRequest.newBuilder()
-//                    .setAccountId(tradingAccountId)
-//                    .setAmount(NumberMapper.bigDecimalToMoneyValue(amount, "rub"))
-//                    .build();
-//            sandboxService.callSyncMethod(stub -> stub.sandboxPayIn(payInRequest));
-//            log.info("Баланс песочницы пополнен на сумму: {} руб.", amount);
-//        }
-//    }
-//
-//    public GetAccountsResponse getAccounts() {
-//        var accountsRequest = GetAccountsRequest.newBuilder()
-//                .setStatus(AccountStatus.ACCOUNT_STATUS_ALL)
-//                .build();
-//        return userService.callSyncMethod(stub -> stub.getAccounts(accountsRequest));
-//    }
-//
-//    public GetAccountValuesResponse getAccountValues(String accountId) {
-//        var request = GetAccountValuesRequest.newBuilder()
-//                .addAccounts(accountId)
-//                .build();
-//        return userService.callSyncMethod(stub -> stub.getAccountValues(request));
-//    }
-//
-//    public PositionsResponse getPositions(String accountId) {
-//        var request = PositionsRequest.newBuilder()
-//                .setAccountId(accountId)
-//                .build();
-//        return operationsService.callSyncMethod(stub -> stub.getPositions(request));
-//    }
-//
-//    public PortfolioResponse getPortfolio(String accountId) {
-//        var request = PortfolioRequest.newBuilder()
-//                .setAccountId(accountId)
-//                .build();
-//        return operationsService.callSyncMethod(stub -> stub.getPortfolio(request));
-//    }
 }
