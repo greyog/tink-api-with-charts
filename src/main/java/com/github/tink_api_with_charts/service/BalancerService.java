@@ -48,8 +48,8 @@ public class BalancerService {
         long newShareQtyAtUpperAlloc = (long) Math.floor(newShareValue / sharePriceAtUpperAlloc);
         long qtyToSellAtUpperAlloc = shareQty - newShareQtyAtUpperAlloc;
 
-        double shareValueAtlowerAlloc = totalCashValue * lowerAlloc / (1 - lowerAlloc);
-        double sharePriceAtLowerAlloc = shareValueAtlowerAlloc / shareQty;
+        double shareValueAtLowerAlloc = totalCashValue * lowerAlloc / (1 - lowerAlloc);
+        double sharePriceAtLowerAlloc = shareValueAtLowerAlloc / shareQty;
         long newShareQtyAtLowerAlloc = (long) Math.floor(newShareValue / sharePriceAtLowerAlloc);
         long qtyToBuyAtLowerAlloc = newShareQtyAtLowerAlloc - shareQty;
         log.info("Price {}, \tPortfolio Value {}, \tCurrent alloc {}, \tsharePriceAtUpperAlloc {}, \tqtyToSellAtUpperAlloc {}, \tsharePriceAtLowerAlloc {}, \tqtyToBuyAtLowerAlloc {}",

@@ -3,6 +3,7 @@ package com.github.tink_api_with_charts.component;
 import com.github.tink_api_with_charts.cinfiguration.BalancerProperties;
 import com.github.tink_api_with_charts.service.BalancerStateService;
 import com.github.tink_api_with_charts.utils.NumberUtils;
+import jakarta.annotation.PostConstruct;
 import lombok.SneakyThrows;
 import org.springframework.stereotype.Component;
 import ru.tinkoff.piapi.contract.v1.MoneyValue;
@@ -12,7 +13,6 @@ import ru.tinkoff.piapi.contract.v1.PositionsResponse;
 import ru.tinkoff.piapi.contract.v1.PositionsSecurities;
 import ru.tinkoff.piapi.contract.v1.PositionsStreamRequest;
 import ru.tinkoff.piapi.contract.v1.PositionsStreamResponse;
-import ru.ttech.piapi.core.connector.ConnectorConfiguration;
 import ru.ttech.piapi.core.connector.streaming.StreamServiceStubFactory;
 import ru.ttech.piapi.core.impl.operations.PositionsStreamWrapperConfiguration;
 
@@ -27,25 +27,27 @@ public class BalancerPositionsMonitor {
     private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(BalancerPositionsMonitor.class);
 
     private final BalancerProperties properties;
-    private final ConnectorConfiguration configuration;
-    //    private final AsyncStubWrapper<OperationsStreamServiceGrpc.OperationsStreamServiceFutureStub> operationsService;
     private final BalancerStateService balancerStateService;
-
-    private String tradingAccountId;
+    private final StreamServiceStubFactory streamServiceStubFactory;
+    private final ScheduledExecutorService scheduledExecutorService;
 
     public BalancerPositionsMonitor(
             BalancerProperties properties,
-            ConnectorConfiguration configuration,
             StreamServiceStubFactory streamServiceStubFactory,
             ScheduledExecutorService scheduledExecutorService,
             BalancerStateService balancerStateService
     ) {
         this.properties = properties;
-        this.configuration = configuration;
         this.balancerStateService = balancerStateService;
+        this.streamServiceStubFactory = streamServiceStubFactory;
+        this.scheduledExecutorService = scheduledExecutorService;
+    }
+
+    @PostConstruct
+    private void start() {
         var wrapper = streamServiceStubFactory.newResilienceServerSideStream(
                 PositionsStreamWrapperConfiguration.builder(scheduledExecutorService)
-                        .addOnConnectListener(() -> log.info("PositionsStreamWrapper Connect"))
+                        .addOnConnectListener(() -> log.info("PositionsStreamWrapper Connected"))
                         .addOnResponseListener(this::handlePositionsResponse)
                         .build());
         PositionsStreamRequest request = PositionsStreamRequest.newBuilder()
