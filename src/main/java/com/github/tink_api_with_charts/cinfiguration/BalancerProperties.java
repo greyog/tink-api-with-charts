@@ -11,7 +11,9 @@ public class BalancerProperties {
 
   private double targetShareAllocation;
 
-  private double rebalanceThreshold;
+  private double rebalanceThresholdUp;
+
+  private double rebalanceThresholdDown;
 
   private String shareUid;
 

@@ -13,11 +13,17 @@ public class BalancerService {
     private final BalancerProperties properties;
     private final double upperAlloc;
     private final double lowerAlloc;
+    private final double targetAlloc;
+    private final double deltaUp;
+    private final double deltaDown;
 
     public BalancerService(BalancerProperties properties) {
         this.properties = properties;
-        upperAlloc = properties.getTargetShareAllocation() + properties.getRebalanceThreshold();
-        lowerAlloc = properties.getTargetShareAllocation() - properties.getRebalanceThreshold();
+        deltaUp = properties.getRebalanceThresholdUp();
+        deltaDown = properties.getRebalanceThresholdDown();
+        targetAlloc = properties.getTargetShareAllocation();
+        upperAlloc = targetAlloc + deltaUp;
+        lowerAlloc = targetAlloc - deltaDown;
     }
 
     public void handleStateChange(String trigger, BigDecimal cashValue,
@@ -30,28 +36,11 @@ public class BalancerService {
         double totalValue = shareValue + totalCashValue;
         double shareAllocation = shareValue / totalValue;
 
-        double newShareValue = totalCashValue * properties.getTargetShareAllocation() / (1 - properties.getTargetShareAllocation());
-        long newShareQty = (long) Math.floor(newShareValue / shareBidPrice.doubleValue());
-        if (shareAllocation > upperAlloc) {
-            long shareQtyToSell =  shareQty - newShareQty;
-            // todo should sell
-            log.warn("Need to sell {}", shareQtyToSell);
-        } else {
-            if (shareAllocation < lowerAlloc) {
-                long shareQtyToBuy =  newShareQty - shareQty;
-                // todo should buy
-                log.warn("Need to buy {}", shareQtyToBuy);
-            }
-        }
-        double shareValueAtUpperAlloc = totalCashValue * upperAlloc / (1 - upperAlloc);
-        double sharePriceAtUpperAlloc = shareValueAtUpperAlloc / shareQty;
-        long newShareQtyAtUpperAlloc = (long) Math.floor(newShareValue / sharePriceAtUpperAlloc);
-        long qtyToSellAtUpperAlloc = shareQty - newShareQtyAtUpperAlloc;
+        double sharePriceAtUpperAlloc = totalCashValue / shareQty * upperAlloc / (1 - upperAlloc);
+        long qtyToSellAtUpperAlloc = Math.round(shareQty * deltaUp / upperAlloc);
 
-        double shareValueAtLowerAlloc = totalCashValue * lowerAlloc / (1 - lowerAlloc);
-        double sharePriceAtLowerAlloc = shareValueAtLowerAlloc / shareQty;
-        long newShareQtyAtLowerAlloc = (long) Math.floor(newShareValue / sharePriceAtLowerAlloc);
-        long qtyToBuyAtLowerAlloc = newShareQtyAtLowerAlloc - shareQty;
+        double sharePriceAtLowerAlloc = totalCashValue / shareQty * lowerAlloc / (1 - lowerAlloc);
+        long qtyToBuyAtLowerAlloc = Math.round(shareQty * deltaDown / lowerAlloc);
         log.info("Price {}, \tPortfolio Value {}, \tCurrent alloc {}, \tsharePriceAtUpperAlloc {}, \tqtyToSellAtUpperAlloc {}, \tsharePriceAtLowerAlloc {}, \tqtyToBuyAtLowerAlloc {}",
                 shareBidPrice,
                 String.format("%.2f", totalValue),
