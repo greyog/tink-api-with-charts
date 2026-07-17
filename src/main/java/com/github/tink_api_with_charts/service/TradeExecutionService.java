@@ -4,18 +4,22 @@ import com.github.tink_api_with_charts.cinfiguration.BalancerProperties;
 import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Service;
 import org.ta4j.core.Bar;
 import ru.tinkoff.piapi.contract.v1.CancelOrderRequest;
 import ru.tinkoff.piapi.contract.v1.CandleInstrument;
 import ru.tinkoff.piapi.contract.v1.GetMaxLotsRequest;
 import ru.tinkoff.piapi.contract.v1.GetOrdersRequest;
+import ru.tinkoff.piapi.contract.v1.GetOrdersResponse;
 import ru.tinkoff.piapi.contract.v1.InstrumentIdType;
 import ru.tinkoff.piapi.contract.v1.InstrumentRequest;
 import ru.tinkoff.piapi.contract.v1.InstrumentsServiceGrpc;
+import ru.tinkoff.piapi.contract.v1.MoneyValue;
 import ru.tinkoff.piapi.contract.v1.OperationsServiceGrpc;
 import ru.tinkoff.piapi.contract.v1.OrderDirection;
 import ru.tinkoff.piapi.contract.v1.OrderExecutionReportStatus;
 import ru.tinkoff.piapi.contract.v1.OrderIdType;
+import ru.tinkoff.piapi.contract.v1.OrderState;
 import ru.tinkoff.piapi.contract.v1.OrderStateStreamRequest;
 import ru.tinkoff.piapi.contract.v1.OrderStateStreamResponse;
 import ru.tinkoff.piapi.contract.v1.OrderType;
@@ -32,6 +36,7 @@ import ru.ttech.piapi.core.impl.orders.OrderStateStreamWrapperConfiguration;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -39,10 +44,13 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Данный класс является примером реализации сервиса, который отвечает за торговлю на бирже согласно сигналам по стратегии
  */
+@Service
 public class TradeExecutionService {
 
     private static final Logger log = LoggerFactory.getLogger(TradeExecutionService.class);
@@ -63,6 +71,12 @@ public class TradeExecutionService {
     private final int instrumentLots;
     private final String tradingAccountId;
 
+    private final AtomicReference<BigDecimal> shareBuyPrice = new AtomicReference<>();
+    private final AtomicLong shareBuyQty = new AtomicLong(0);
+    private final AtomicReference<BigDecimal> shareSellPrice = new AtomicReference<>();
+    private final AtomicLong shareSellQty = new AtomicLong(0);
+
+
     public TradeExecutionService(
             ServiceStubFactory serviceStubFactory,
             BalancerProperties properties,
@@ -75,7 +89,7 @@ public class TradeExecutionService {
         this.instrumentLots = 1;
         this.tradingAccountId = properties.getAccountId();
         this.serviceStubFactory = serviceStubFactory;
-        this.instruments = Set.of(properties.getShareUid(), properties.getShareUid());
+        this.instruments = Set.of(properties.getShareUid(), properties.getCashEtfUid());
         this.userService = serviceStubFactory.newSyncService(UsersServiceGrpc::newBlockingStub);
         this.instrumentsService = serviceStubFactory.newSyncService(InstrumentsServiceGrpc::newBlockingStub);
         this.ordersService = serviceStubFactory.newSyncService(OrdersServiceGrpc::newBlockingStub);
@@ -90,6 +104,7 @@ public class TradeExecutionService {
                         .addOnResponseListener(this::onNextOrder)
                         .addOnConnectListener(() -> {
                             log.info("Стрим ордеров успешно подключен");
+                            initOrders();
                         })
                         .build());
 
@@ -97,6 +112,46 @@ public class TradeExecutionService {
                 .addAccounts(tradingAccountId)
                 .build();
         wrapper.subscribe(request);
+
+        initOrders();
+    }
+
+    private void initOrders() {
+        var ordersRequest = GetOrdersRequest.newBuilder()
+                .setAccountId(tradingAccountId)
+                .build();
+        GetOrdersResponse ordersResponse = ordersService.callSyncMethod(stub -> stub.getOrders(ordersRequest));
+        List<OrderState> ordersList = ordersResponse.getOrdersList();
+        log.info("ordersResponse.getOrdersList() = {}", ordersList);
+        ordersList.stream()
+                .filter(orderState -> orderState.getInstrumentUid().equals(properties.getShareUid()))
+                .filter(orderState -> orderState.getExecutionReportStatus().equals(OrderExecutionReportStatus.EXECUTION_REPORT_STATUS_NEW))
+                .forEach(orderState -> {
+                    MoneyValue moneyValue = orderState.getInitialSecurityPrice();
+                    BigDecimal price = NumberMapper.moneyValueToBigDecimal(moneyValue);
+                    long lots = orderState.getLotsRequested() - orderState.getLotsExecuted();
+                    switch (orderState.getDirection()) {
+                        case ORDER_DIRECTION_BUY -> {
+                            updateShareBuyOrder(lots, price);
+                        }
+                        case ORDER_DIRECTION_SELL -> {
+                            updateShareSellOrder(lots, price);
+                        }
+                        default -> log.warn("Unrecognized order direction {}", orderState);
+                    }
+                });
+    }
+
+    private void updateShareSellOrder(long lots, BigDecimal price) {
+        shareSellPrice.set(price);
+        shareSellQty.set(lots);
+        log.info("New share Sell order: price {}, lots {}", price, lots);
+    }
+
+    private void updateShareBuyOrder(long lots, BigDecimal price) {
+        shareBuyPrice.set(price);
+        shareBuyQty.set(lots);
+        log.info("New share Buy order: price {}, lots {}", price, lots);
     }
 
     private void onNextOrder(OrderStateStreamResponse orderState) {
@@ -118,6 +173,26 @@ public class TradeExecutionService {
                 var sellAmount = NumberMapper.moneyValueToBigDecimal(order.getAmount());
                 log.info("Заявка на продажу инструмента {} исполнена! Стоимость ордера: {}", instrumentId, sellAmount);
             }
+        }
+        if (!order.getInstrumentUid().equals(properties.getShareUid())) {
+            log.info("Not share order");
+            return;
+        }
+        if (!order.getExecutionReportStatus().equals(OrderExecutionReportStatus.EXECUTION_REPORT_STATUS_NEW)) {
+            log.info("Not share new order");
+            return;
+        }
+        MoneyValue moneyValue = order.getInitialOrderPrice();
+        BigDecimal price = NumberMapper.moneyValueToBigDecimal(moneyValue);
+        long lots = order.getLotsRequested() - order.getLotsExecuted();
+        switch (order.getDirection()) {
+            case ORDER_DIRECTION_BUY -> {
+                updateShareBuyOrder(lots, price);
+            }
+            case ORDER_DIRECTION_SELL -> {
+                updateShareSellOrder(lots, price);
+            }
+            default -> log.warn("Unrecognized order direction {}", orderState);
         }
     }
 
