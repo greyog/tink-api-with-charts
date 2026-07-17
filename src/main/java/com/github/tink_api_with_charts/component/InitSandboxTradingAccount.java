@@ -2,7 +2,6 @@ package com.github.tink_api_with_charts.component;
 
 import com.github.tink_api_with_charts.cinfiguration.TradingProperties;
 import lombok.Getter;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import ru.tinkoff.piapi.contract.v1.AccountStatus;
 import ru.tinkoff.piapi.contract.v1.GetAccountsRequest;
@@ -23,9 +22,9 @@ import ru.ttech.piapi.core.helpers.NumberMapper;
 import java.math.BigDecimal;
 
 @Component
-public class InitTradingAccount {
+public class InitSandboxTradingAccount {
 
-    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(InitTradingAccount.class);
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(InitSandboxTradingAccount.class);
 
     private final TradingProperties properties;
     private final ConnectorConfiguration configuration;
@@ -36,7 +35,7 @@ public class InitTradingAccount {
     @Getter
     private String tradingAccountId;
 
-    public InitTradingAccount(
+    public InitSandboxTradingAccount(
             TradingProperties properties,
             ConnectorConfiguration configuration,
             ServiceStubFactory serviceStubFactory
@@ -75,6 +74,7 @@ public class InitTradingAccount {
             } else {
                 tradingAccountId = sandboxAccounts.getAccounts(0).getId();
             }
+            log.info("tradingAccountId = {}", tradingAccountId);
             payInSandbox();
         }
     }
@@ -86,9 +86,9 @@ public class InitTradingAccount {
                 .findFirst()
                 .map(NumberMapper::moneyValueToBigDecimal)
                 .orElse(BigDecimal.ZERO);
-        var configBalance = BigDecimal.valueOf(properties.getBalance());
+        var configBalance = BigDecimal.valueOf(properties.getSandboxInitialBalance());
         log.info("Баланс: {} (настройка: {})", balance, configBalance);
-        if (balance.compareTo(BigDecimal.valueOf(properties.getBalance())) < 0) {
+        if (balance.compareTo(BigDecimal.valueOf(properties.getSandboxInitialBalance())) < 0) {
             var amount = configBalance.subtract(balance);
             var payInRequest = SandboxPayInRequest.newBuilder()
                     .setAccountId(tradingAccountId)

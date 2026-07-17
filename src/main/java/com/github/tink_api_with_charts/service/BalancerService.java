@@ -9,7 +9,6 @@ import java.math.BigDecimal;
 public class BalancerService {
 
     private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(BalancerService.class);
-    private static final long iisCashEtfQty = 2501;
     private final BalancerProperties properties;
     private final double upperAlloc;
     private final double lowerAlloc;
@@ -32,22 +31,32 @@ public class BalancerService {
 //        log.info("BalancerService.handleStateChange. Trigger: {}, \tCashValue: {}, \tShare qty: {}, \tshare bid: {}, \tcash ETF qty: {}, \tcash ETF bid: {}",
 //                trigger, cashValue, shareQty, shareBidPrice, cashEtfQty, cashEtfBidPrice);
         double shareValue = shareBidPrice.doubleValue() * shareQty;
-        double totalCashValue = cashEtfBidPrice.doubleValue() * (cashEtfQty + iisCashEtfQty) + cashValue.doubleValue();
+        double totalCashValue = cashEtfBidPrice.doubleValue() * (cashEtfQty + properties.getIisCashEtfQty()) + cashValue.doubleValue();
         double totalValue = shareValue + totalCashValue;
         double shareAllocation = shareValue / totalValue;
 
-        double sharePriceAtUpperAlloc = totalCashValue / shareQty * upperAlloc / (1 - upperAlloc);
-        long qtyToSellAtUpperAlloc = Math.round(shareQty * deltaUp / upperAlloc);
+        if (shareAllocation > upperAlloc) {
+            log.info("Target alloc: {}, current share alloc: {}. Need to Sell",
+                    String.format("%.6f", targetAlloc),
+                    String.format("%.6f", shareAllocation));
+        } else if (shareAllocation < upperAlloc) {
+            log.info("Target alloc: {}, current share alloc: {}. Need to Buy",
+                    String.format("%.6f", targetAlloc),
+                    String.format("%.6f", shareAllocation));
+        } else {
+            double sharePriceAtUpperAlloc = totalCashValue / shareQty * upperAlloc / (1 - upperAlloc);
+            long qtyToSellAtUpperAlloc = Math.round(shareQty * deltaUp / upperAlloc);
 
-        double sharePriceAtLowerAlloc = totalCashValue / shareQty * lowerAlloc / (1 - lowerAlloc);
-        long qtyToBuyAtLowerAlloc = Math.round(shareQty * deltaDown / lowerAlloc);
-        log.info("Price {}, \tPortfolio Value {}, \tCurrent alloc {}, \tsharePriceAtUpperAlloc {}, \tqtyToSellAtUpperAlloc {}, \tsharePriceAtLowerAlloc {}, \tqtyToBuyAtLowerAlloc {}",
-                shareBidPrice,
-                String.format("%.2f", totalValue),
-                String.format("%.6f", shareAllocation),
-                String.format("%.2f", sharePriceAtUpperAlloc),
-                qtyToSellAtUpperAlloc,
-                String.format("%.2f", sharePriceAtLowerAlloc),
-                qtyToBuyAtLowerAlloc);
+            double sharePriceAtLowerAlloc = totalCashValue / shareQty * lowerAlloc / (1 - lowerAlloc);
+            long qtyToBuyAtLowerAlloc = Math.round(shareQty * deltaDown / lowerAlloc);
+            log.info("Price {}, \tPortfolio Value {}, \tCurrent alloc {}, \tsharePriceAtUpperAlloc {}, \tqtyToSellAtUpperAlloc {}, \tsharePriceAtLowerAlloc {}, \tqtyToBuyAtLowerAlloc {}",
+                    shareBidPrice,
+                    String.format("%.2f", totalValue),
+                    String.format("%.6f", shareAllocation),
+                    String.format("%.2f", sharePriceAtUpperAlloc),
+                    qtyToSellAtUpperAlloc,
+                    String.format("%.2f", sharePriceAtLowerAlloc),
+                    qtyToBuyAtLowerAlloc);
+        }
     }
 }

@@ -63,7 +63,7 @@ public class BalancerOrderBookMonitor {
 
     private void updateOrderBook(OrderBook orderBook) {
         if (orderBook.getBidsCount() == 0 || orderBook.getAsksCount() == 0) {
-            log.warn("Стакан для {} пуст", orderBook.getInstrumentUid());
+            log.warn("Стакан для {} пуст", orderBook.getTicker());
             return;
         }
 

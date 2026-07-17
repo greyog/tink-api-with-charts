@@ -19,4 +19,6 @@ public class BalancerProperties {
 
   private String cashEtfUid;
 
+  private long iisCashEtfQty = 2501;
+
 }

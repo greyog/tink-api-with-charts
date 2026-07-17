@@ -1,23 +1,25 @@
 package com.github.tink_api_with_charts.component;
 
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.context.annotation.Import;
+import com.github.tink_api_with_charts.cinfiguration.TradingProperties;
+import org.junit.jupiter.api.Test;
+import ru.ttech.piapi.core.connector.ConnectorConfiguration;
+import ru.ttech.piapi.core.connector.ServiceStubFactory;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-@SpringBootTest
-@Import(InitTradingAccount.class) // чтобы можно было внедрить бин напрямую
 public class InitTradingAccountIntegrationTest {
 
-    @Autowired
-    private InitTradingAccount initTradingAccount;
+    private InitSandboxTradingAccount initTradingAccount;
 
-//    @Test
+    @Test
     void testInit_findsBrokerAccountInProductionMode() throws InterruptedException {
-        // Act
-//        findInstrument.init(); // вызов метода вручную (уже вызван через @PostConstruct)
 
+        var props = new TradingProperties();
+        props.setSandboxInitialBalance(1_000_000);
+        var configuration = ConnectorConfiguration.loadPropertiesFromFile("config/application.yml");
+        ServiceStubFactory ssf = ServiceStubFactory.create(configuration);
+        initTradingAccount = new InitSandboxTradingAccount(props, configuration, ssf);
+        initTradingAccount.init();
         // Assert
         String accountId = initTradingAccount.getTradingAccountId();
         assertThat(accountId)
