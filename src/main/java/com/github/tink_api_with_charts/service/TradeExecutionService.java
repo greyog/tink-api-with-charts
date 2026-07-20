@@ -1,9 +1,11 @@
 package com.github.tink_api_with_charts.service;
 
 import com.github.tink_api_with_charts.cinfiguration.BalancerProperties;
+import com.github.tink_api_with_charts.event.TradeCompletedEvent;
 import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.ta4j.core.Bar;
 import ru.tinkoff.piapi.contract.v1.CancelOrderRequest;
@@ -63,9 +65,10 @@ public class TradeExecutionService {
     private final SyncStubWrapper<SandboxServiceGrpc.SandboxServiceBlockingStub> sandboxService;
     private final SyncStubWrapper<OperationsServiceGrpc.OperationsServiceBlockingStub> operationsService;
     private final ScheduledExecutorService streamHealthcheckExecutor = Executors.newSingleThreadScheduledExecutor();
-    private final Map<String, String> instrumentLastOrderIds = new ConcurrentHashMap<>();
     private final ServiceStubFactory serviceStubFactory;
     private final StreamServiceStubFactory streamServiceStubFactory;
+    private final ApplicationEventPublisher eventPublisher;
+
     private final BigDecimal sandboxBalance;
     private final Set<String> instruments;
     private final int instrumentLots;
@@ -76,15 +79,21 @@ public class TradeExecutionService {
     private final AtomicReference<BigDecimal> shareSellPrice = new AtomicReference<>();
     private final AtomicLong shareSellQty = new AtomicLong(0);
 
+    private final Map<String, String> instrumentLastOrderIds = new ConcurrentHashMap<>();
+    private final Map<String, BigDecimal> uidToMinPriceIncrement = new ConcurrentHashMap<>();
+    private final Map<String, PostOrderAsyncRequest> uidToPendingOrderId = new ConcurrentHashMap<>();
+
 
     public TradeExecutionService(
             ServiceStubFactory serviceStubFactory,
             BalancerProperties properties,
-            StreamServiceStubFactory streamServiceStubFactory
+            StreamServiceStubFactory streamServiceStubFactory,
+            ApplicationEventPublisher eventPublisher
     ) {
         this.configuration = serviceStubFactory.getConfiguration();
         this.properties = properties;
         this.streamServiceStubFactory = streamServiceStubFactory;
+        this.eventPublisher = eventPublisher;
         this.sandboxBalance = BigDecimal.TEN;
         this.instrumentLots = 1;
         this.tradingAccountId = properties.getAccountId();
@@ -162,9 +171,7 @@ public class TradeExecutionService {
         var order = orderState.getOrderState();
         var instrumentId = order.getInstrumentUid();
         log.info("Новый ордер с id: {}", order.getOrderRequestId());
-        if (instrumentLastOrderIds.containsKey(instrumentId)
-            && instrumentLastOrderIds.get(instrumentId).equals(order.getOrderRequestId())
-            && order.getExecutionReportStatus() == OrderExecutionReportStatus.EXECUTION_REPORT_STATUS_FILL) {
+        if (order.getExecutionReportStatus() == OrderExecutionReportStatus.EXECUTION_REPORT_STATUS_FILL) {
             log.info("Сделка {} исполнена", order.getOrderRequestId());
             if (order.getDirection() == OrderDirection.ORDER_DIRECTION_BUY) {
                 var buyAmount = NumberMapper.moneyValueToBigDecimal(order.getAmount());
@@ -173,6 +180,21 @@ public class TradeExecutionService {
                 var sellAmount = NumberMapper.moneyValueToBigDecimal(order.getAmount());
                 log.info("Заявка на продажу инструмента {} исполнена! Стоимость ордера: {}", instrumentId, sellAmount);
             }
+            BigDecimal amount = NumberMapper.moneyValueToBigDecimal(order.getAmount());
+            // Опубликовать событие
+            eventPublisher.publishEvent(new TradeCompletedEvent(
+                    this,
+                    order.getInstrumentUid(),
+                    order.getDirection(),
+                    amount
+            ));
+        }
+        if (Set.of(OrderExecutionReportStatus.EXECUTION_REPORT_STATUS_CANCELLED,
+                OrderExecutionReportStatus.EXECUTION_REPORT_STATUS_FILL,
+                OrderExecutionReportStatus.EXECUTION_REPORT_STATUS_REJECTED).contains(order.getExecutionReportStatus())) {
+            uidToPendingOrderId.remove(order.getInstrumentUid());
+            log.info("Заявка по инструменту {} ( uid {}) исполнена или отменена", order.getTicker(), instrumentId);
+
         }
         if (!order.getInstrumentUid().equals(properties.getShareUid())) {
             log.info("Not share order");
@@ -194,6 +216,30 @@ public class TradeExecutionService {
             }
             default -> log.warn("Unrecognized order direction {}", orderState);
         }
+    }
+
+    public void marketBuy(String instrumentId, BigDecimal maxBuyPrice, long qty) {
+//        cancelOpenedOrdersForInstrument(instrumentId);
+        var price = getInstrumentPrice(instrumentId, maxBuyPrice, OrderDirection.ORDER_DIRECTION_BUY);
+        long quantity = Math.min(qty, getMaxBuyLots(instrumentId, price));
+        if (quantity < qty) {
+            log.warn("Недостаточно средств для покупки");
+            return;
+        }
+        postLimitOrder(instrumentId, OrderDirection.ORDER_DIRECTION_BUY, quantity, price);
+        log.info("Покупка по стратегии: {} по цене: {} (лотов: {})", instrumentId, price, quantity);
+    }
+
+    public void marketSell(String instrumentId, BigDecimal minSellPrice, long qty) {
+//        cancelOpenedOrdersForInstrument(instrumentId);
+        long quantity = Math.min(qty, getMaxSellLots(instrumentId));
+        var price = getInstrumentPrice(instrumentId, minSellPrice, OrderDirection.ORDER_DIRECTION_SELL);
+        if (quantity <= 0) {
+            log.warn("Недостаточно средств на продажу");
+            return;
+        }
+        postLimitOrder(instrumentId, OrderDirection.ORDER_DIRECTION_SELL, quantity, price);
+        log.info("Продажа по стратегии: {} по цене: {} (лотов: {})", instrumentId, price, quantity);
     }
 
     /**
@@ -248,6 +294,10 @@ public class TradeExecutionService {
         if (Optional.ofNullable(tradingAccountId).isEmpty()) {
             throw new IllegalStateException("Нельзя выставить ордер, так как не указан брокерский счет");
         }
+        if (uidToPendingOrderId.containsKey(instrumentId)) {
+            log.info("Выставление нового ордера невозможно, пока есть открытые ордеры по инструменту: {}", uidToPendingOrderId.get(instrumentId));
+            return;
+        }
         var postOrderRequest = PostOrderAsyncRequest.newBuilder()
                 .setOrderId(UUID.randomUUID().toString())
                 .setAccountId(tradingAccountId)
@@ -257,8 +307,9 @@ public class TradeExecutionService {
                 .setPrice(NumberMapper.bigDecimalToQuotation(price))
                 .setOrderType(OrderType.ORDER_TYPE_LIMIT)
                 .build();
+//        instrumentLastOrderIds.put(instrumentId, order.getOrderRequestId());
+        uidToPendingOrderId.put(instrumentId, postOrderRequest);
         var order = ordersService.callSyncMethod(stub -> stub.postOrderAsync(postOrderRequest));
-        instrumentLastOrderIds.put(instrumentId, order.getOrderRequestId());
     }
 
     /**
@@ -338,12 +389,17 @@ public class TradeExecutionService {
      * @return минимальный шаг цены
      */
     private BigDecimal getMinPriceIncrement(String instrumentId) {
+        if (uidToMinPriceIncrement.containsKey(instrumentId)) {
+            return uidToMinPriceIncrement.get(instrumentId);
+        }
         var instrumentRequest = InstrumentRequest.newBuilder()
                 .setIdType(InstrumentIdType.INSTRUMENT_ID_TYPE_UID)
                 .setId(instrumentId)
                 .build();
         var instrumentResponse = instrumentsService.callSyncMethod(stub -> stub.getInstrumentBy(instrumentRequest));
-        return NumberMapper.quotationToBigDecimal(instrumentResponse.getInstrument().getMinPriceIncrement());
+        BigDecimal minPriceIncrement = NumberMapper.quotationToBigDecimal(instrumentResponse.getInstrument().getMinPriceIncrement());
+        uidToMinPriceIncrement.put(instrumentId, minPriceIncrement);
+        return minPriceIncrement;
     }
 
     /**

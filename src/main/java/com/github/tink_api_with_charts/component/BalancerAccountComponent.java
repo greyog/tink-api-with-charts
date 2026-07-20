@@ -1,9 +1,11 @@
 package com.github.tink_api_with_charts.component;
 
 import com.github.tink_api_with_charts.cinfiguration.BalancerProperties;
+import com.github.tink_api_with_charts.event.TradeCompletedEvent;
 import com.github.tink_api_with_charts.service.BalancerStateService;
 import com.github.tink_api_with_charts.utils.NumberUtils;
 import jakarta.annotation.PostConstruct;
+import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 import ru.tinkoff.piapi.contract.v1.AccountStatus;
 import ru.tinkoff.piapi.contract.v1.GetAccountValuesRequest;
@@ -66,6 +68,27 @@ public class BalancerAccountComponent {
 
     @PostConstruct
     public void init() {
+        fetchPositions();
+
+        if (configuration.isSandboxEnabled()) {
+            GetAccountsResponse sandboxAccounts = sandboxService.getStub().getSandboxAccounts(
+                    GetAccountsRequest.newBuilder()
+                            .setStatus(AccountStatus.ACCOUNT_STATUS_OPEN)
+                            .build());
+            if (sandboxAccounts.getAccountsCount() == 0) {
+                OpenSandboxAccountResponse openSandboxAccountResponse = sandboxService.getStub().openSandboxAccount(
+                        OpenSandboxAccountRequest.newBuilder()
+                                .build());
+                tradingAccountId = openSandboxAccountResponse.getAccountId();
+            } else {
+                tradingAccountId = sandboxAccounts.getAccounts(0).getId();
+            }
+            payInSandbox();
+        }
+    }
+
+    private void fetchPositions() {
+        log.info("Обновляем информацию о позициях");
         PositionsResponse positions = getPositions(properties.getAccountId());
         MoneyValue rubMoneyValue = positions.getMoneyList().stream()
                 .filter(moneyValue -> "rub".equals(moneyValue.getCurrency()))
@@ -87,22 +110,11 @@ public class BalancerAccountComponent {
                 .map(PositionsSecurities::getBalance)
                 .orElse(0L);
         balancerStateService.updateCashEtfQty(cashEtfQty);
+    }
 
-        if (configuration.isSandboxEnabled()) {
-            GetAccountsResponse sandboxAccounts = sandboxService.getStub().getSandboxAccounts(
-                    GetAccountsRequest.newBuilder()
-                            .setStatus(AccountStatus.ACCOUNT_STATUS_OPEN)
-                            .build());
-            if (sandboxAccounts.getAccountsCount() == 0) {
-                OpenSandboxAccountResponse openSandboxAccountResponse = sandboxService.getStub().openSandboxAccount(
-                        OpenSandboxAccountRequest.newBuilder()
-                                .build());
-                tradingAccountId = openSandboxAccountResponse.getAccountId();
-            } else {
-                tradingAccountId = sandboxAccounts.getAccounts(0).getId();
-            }
-            payInSandbox();
-        }
+    @EventListener
+    public void onTradeCompleted(TradeCompletedEvent event) {
+        fetchPositions();
     }
 
     private void payInSandbox() {

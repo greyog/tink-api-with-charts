@@ -44,7 +44,7 @@ class BalancerServiceTest {
         // или просто создадим сервис и подменим логгер через утилиту, если нужно.
         // Но проще всего в тесте создать экземпляр и через рефлексию заменить logger.
 
-        balancerService = new BalancerService(properties);
+        balancerService = new BalancerService(properties, null);
 //        injectLogger(balancerService, logger);
     }
 
