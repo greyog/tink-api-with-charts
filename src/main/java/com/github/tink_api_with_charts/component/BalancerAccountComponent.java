@@ -1,10 +1,12 @@
 package com.github.tink_api_with_charts.component;
 
 import com.github.tink_api_with_charts.cinfiguration.BalancerProperties;
+import com.github.tink_api_with_charts.event.PositionInfoUpdatedEvent;
 import com.github.tink_api_with_charts.event.TradeCompletedEvent;
 import com.github.tink_api_with_charts.service.BalancerStateService;
 import com.github.tink_api_with_charts.utils.NumberUtils;
 import jakarta.annotation.PostConstruct;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 import ru.tinkoff.piapi.contract.v1.AccountStatus;
@@ -44,6 +46,7 @@ public class BalancerAccountComponent {
     private final SyncStubWrapper<SandboxServiceGrpc.SandboxServiceBlockingStub> sandboxService;
     private final SyncStubWrapper<OperationsServiceGrpc.OperationsServiceBlockingStub> operationsService;
     private final BalancerStateService balancerStateService;
+    private final ApplicationEventPublisher eventPublisher;
 
     private String tradingAccountId;
 
@@ -51,7 +54,8 @@ public class BalancerAccountComponent {
             BalancerProperties properties,
             ConnectorConfiguration configuration,
             ServiceStubFactory serviceStubFactory,
-            BalancerStateService balancerStateService
+            BalancerStateService balancerStateService,
+            ApplicationEventPublisher eventPublisher
     ) {
         this.properties = properties;
         this.configuration = configuration;
@@ -59,11 +63,12 @@ public class BalancerAccountComponent {
         this.sandboxService = serviceStubFactory.newSyncService(SandboxServiceGrpc::newBlockingStub);
         this.operationsService = serviceStubFactory.newSyncService(OperationsServiceGrpc::newBlockingStub);
         this.balancerStateService = balancerStateService;
+        this.eventPublisher = eventPublisher;
     }
 
     public static BalancerAccountComponent getInstance(ConnectorConfiguration config) {
         ServiceStubFactory ssf = ServiceStubFactory.create(config);
-        return new BalancerAccountComponent(null, config, ssf, null);
+        return new BalancerAccountComponent(null, config, ssf, null, null);
     }
 
     @PostConstruct
@@ -88,28 +93,29 @@ public class BalancerAccountComponent {
     }
 
     private void fetchPositions() {
-        log.info("Обновляем информацию о позициях");
+        log.info("Обновляем информацию о позициях...");
         PositionsResponse positions = getPositions(properties.getAccountId());
         MoneyValue rubMoneyValue = positions.getMoneyList().stream()
                 .filter(moneyValue -> "rub".equals(moneyValue.getCurrency()))
                 .findFirst()
                 .orElseThrow(() -> new IllegalStateException("Currency 'rub' not found between positions"));
         BigDecimal rubCash = NumberUtils.moneyValueBigDecimal(rubMoneyValue);
-        balancerStateService.updateCashValue(rubCash);
 
         long shareQty = positions.getSecuritiesList().stream()
                 .filter(positionsSecurities -> positionsSecurities.getInstrumentUid().equals(properties.getShareUid()))
                 .findFirst()
                 .map(PositionsSecurities::getBalance)
                 .orElse(0L);
-        balancerStateService.updateShareQty(shareQty);
 
         long cashEtfQty = positions.getSecuritiesList().stream()
                 .filter(positionsSecurities -> positionsSecurities.getInstrumentUid().equals(properties.getCashEtfUid()))
                 .findFirst()
                 .map(PositionsSecurities::getBalance)
                 .orElse(0L);
-        balancerStateService.updateCashEtfQty(cashEtfQty);
+
+        balancerStateService.updateFromPositionInfo(rubCash, shareQty, cashEtfQty);
+        log.info("Информацию о позициях обновлена");
+        eventPublisher.publishEvent(new PositionInfoUpdatedEvent(this));
     }
 
     @EventListener

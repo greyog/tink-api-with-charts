@@ -83,6 +83,25 @@ public class BalancerStateService {
         }
     }
 
+    public void updateFromPositionInfo(BigDecimal newCashValue, long newShareQty, long newCashEtfQty) {
+        int updatesCount = 0;
+        if (!Objects.equals(cashValue.get(), newCashValue)) {
+            cashValue.set(newCashValue);
+            updatesCount++;
+        }
+        if (!Objects.equals(shareQty.get(), newShareQty)) {
+            shareQty.set(newShareQty);
+            updatesCount++;
+        }
+        if (!Objects.equals(cashEtfQty.get(), newCashEtfQty)) {
+            cashEtfQty.set(newCashEtfQty);
+            updatesCount++;
+        }
+        if (updatesCount > 0) {
+            notifyBalancerService("Position update");
+        }
+    }
+
     private void notifyBalancerService(String trigger) {
         if (stateIsOk()) {
             balancerService.handleStateChange(trigger, cashValue.get(),

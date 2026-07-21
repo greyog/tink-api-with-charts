@@ -1,11 +1,14 @@
 package com.github.tink_api_with_charts.service;
 
 import com.github.tink_api_with_charts.cinfiguration.BalancerProperties;
+import com.github.tink_api_with_charts.event.PositionInfoUpdatedEvent;
 import com.github.tink_api_with_charts.event.TradeCompletedEvent;
+import com.github.tink_api_with_charts.utils.ConcurrentSlidingCache;
 import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 import org.ta4j.core.Bar;
 import ru.tinkoff.piapi.contract.v1.CancelOrderRequest;
@@ -46,6 +49,7 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -78,11 +82,14 @@ public class TradeExecutionService {
     private final AtomicLong shareBuyQty = new AtomicLong(0);
     private final AtomicReference<BigDecimal> shareSellPrice = new AtomicReference<>();
     private final AtomicLong shareSellQty = new AtomicLong(0);
+    private final AtomicBoolean isWaitingForPositionInfo = new AtomicBoolean(false);
 
     private final Map<String, String> instrumentLastOrderIds = new ConcurrentHashMap<>();
     private final Map<String, BigDecimal> uidToMinPriceIncrement = new ConcurrentHashMap<>();
     private final Map<String, PostOrderAsyncRequest> uidToPendingOrderId = new ConcurrentHashMap<>();
-
+    private final ConcurrentSlidingCache<String> newOrdersCache = new ConcurrentSlidingCache<>();
+    private final ConcurrentSlidingCache<String> filledOrdersCache = new ConcurrentSlidingCache<>();
+    private final ConcurrentSlidingCache<String> cancelledOrdersCache = new ConcurrentSlidingCache<>();
 
     public TradeExecutionService(
             ServiceStubFactory serviceStubFactory,
@@ -164,11 +171,23 @@ public class TradeExecutionService {
     }
 
     private void onNextOrder(OrderStateStreamResponse orderState) {
-        log.info("{}", orderState);
         if (!orderState.hasOrderState()) {
             return;
         }
         var order = orderState.getOrderState();
+        if (order.getExecutionReportStatus() == OrderExecutionReportStatus.EXECUTION_REPORT_STATUS_NEW
+            && newOrdersCache.checkContainsAndAdd(order.getOrderRequestId())) {
+            return;
+        }
+        if (order.getExecutionReportStatus() == OrderExecutionReportStatus.EXECUTION_REPORT_STATUS_FILL
+            && filledOrdersCache.checkContainsAndAdd(order.getOrderRequestId())) {
+            return;
+        }
+        if (order.getExecutionReportStatus() == OrderExecutionReportStatus.EXECUTION_REPORT_STATUS_CANCELLED
+            && cancelledOrdersCache.checkContainsAndAdd(order.getOrderRequestId())) {
+            return;
+        }
+        log.info("{}", orderState);
         var instrumentId = order.getInstrumentUid();
         log.info("Новый ордер с id: {}", order.getOrderRequestId());
         if (order.getExecutionReportStatus() == OrderExecutionReportStatus.EXECUTION_REPORT_STATUS_FILL) {
@@ -193,15 +212,13 @@ public class TradeExecutionService {
                 OrderExecutionReportStatus.EXECUTION_REPORT_STATUS_FILL,
                 OrderExecutionReportStatus.EXECUTION_REPORT_STATUS_REJECTED).contains(order.getExecutionReportStatus())) {
             uidToPendingOrderId.remove(order.getInstrumentUid());
-            log.info("Заявка по инструменту {} ( uid {}) исполнена или отменена", order.getTicker(), instrumentId);
-
+            log.info("По инструменту {} ( uid {}) исполнена или отменена заявка {}", order.getTicker(), instrumentId, order.getOrderRequestId());
         }
         if (!order.getInstrumentUid().equals(properties.getShareUid())) {
             log.info("Not share order");
             return;
         }
         if (!order.getExecutionReportStatus().equals(OrderExecutionReportStatus.EXECUTION_REPORT_STATUS_NEW)) {
-            log.info("Not share new order");
             return;
         }
         MoneyValue moneyValue = order.getInitialOrderPrice();
@@ -298,6 +315,10 @@ public class TradeExecutionService {
             log.info("Выставление нового ордера невозможно, пока есть открытые ордеры по инструменту: {}", uidToPendingOrderId.get(instrumentId));
             return;
         }
+        if (isWaitingForPositionInfo.get()) {
+            log.info("Выставление нового ордера невозможно, пока идёт обновление информации по позициям: {}", uidToPendingOrderId.get(instrumentId));
+            return;
+        }
         var postOrderRequest = PostOrderAsyncRequest.newBuilder()
                 .setOrderId(UUID.randomUUID().toString())
                 .setAccountId(tradingAccountId)
@@ -309,6 +330,7 @@ public class TradeExecutionService {
                 .build();
 //        instrumentLastOrderIds.put(instrumentId, order.getOrderRequestId());
         uidToPendingOrderId.put(instrumentId, postOrderRequest);
+        isWaitingForPositionInfo.set(true);
         var order = ordersService.callSyncMethod(stub -> stub.postOrderAsync(postOrderRequest));
     }
 
@@ -321,10 +343,11 @@ public class TradeExecutionService {
         var ordersRequest = GetOrdersRequest.newBuilder()
                 .setAccountId(tradingAccountId)
                 .build();
+        var ordersResponse = ordersService.callSyncMethod(stub -> stub.getOrders(ordersRequest));
+
         var cancelOrderRequestBuilder = CancelOrderRequest.newBuilder()
                 .setAccountId(tradingAccountId)
                 .setOrderIdType(OrderIdType.ORDER_ID_TYPE_EXCHANGE);
-        var ordersResponse = ordersService.callSyncMethod(stub -> stub.getOrders(ordersRequest));
         ordersResponse.getOrdersList().stream()
                 .filter(orderState -> orderState.getInstrumentUid().equals(instrumentId))
                 .forEach(order -> ordersService.callSyncMethod(stub ->
@@ -423,4 +446,10 @@ public class TradeExecutionService {
     private BigDecimal roundDownPrice(BigDecimal price, BigDecimal minPriceIncrement) {
         return price.divide(minPriceIncrement, 0, RoundingMode.DOWN).multiply(minPriceIncrement);
     }
+
+    @EventListener
+    public void onPositionInfoUpdated(PositionInfoUpdatedEvent event) {
+        isWaitingForPositionInfo.set(false);
+    }
+
 }
