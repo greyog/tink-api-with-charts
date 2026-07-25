@@ -1,7 +1,37 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <configuration debug="false">
+
     <!-- Консольный вывод -->
     <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- RollingFileAppender с ZIP-компрессией -->
+    <appender name="ZIP_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <!-- Текущий активный файл логов -->
+        <file>logs/app.log</file>
+
+        <!-- Политика ротации: ежедневная + по размеру -->
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <!-- Путь к архивным файлам с шаблоном даты и .zip расширением -->
+            <fileNamePattern>logs/archived/app.%d{yyyy-MM-dd}.%i.zip</fileNamePattern>
+
+            <!-- Хранить архивы 30 дней -->
+            <maxHistory>30</maxHistory>
+
+            <!-- Общий размер всех архивов (опционально) -->
+            <totalSizeCap>1GB</totalSizeCap>
+
+            <!-- Ротация по размеру (дополнительно к ежедневной) -->
+            <timeBasedFileNamingAndTriggeringPolicy
+                    class="ch.qos.logback.core.rolling.SizeAndTimeBasedFNATP">
+                <maxFileSize>100MB</maxFileSize>
+            </timeBasedFileNamingAndTriggeringPolicy>
+        </rollingPolicy>
+
+        <!-- Формат записи в файл -->
         <encoder>
             <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
         </encoder>
@@ -10,7 +40,10 @@
     <!-- Корневой логгер -->
     <root level="INFO">
         <appender-ref ref="STDOUT" />
+        <appender-ref ref="ZIP_FILE" />
     </root>
+
+    <!-- Логгер для отладки gRPC -->
     <logger name="ru.ttech.piapi.core.connector.internal.LoggingDebugInterceptor" level="DEBUG"/>
 
 </configuration>

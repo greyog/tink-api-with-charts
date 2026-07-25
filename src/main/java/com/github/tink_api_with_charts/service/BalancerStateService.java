@@ -5,6 +5,8 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.util.Objects;
+import java.util.Optional;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 @Service
@@ -59,7 +61,7 @@ public class BalancerStateService {
         }
     }
 
-    public void updateCashValue(BigDecimal newValue) {
+    private void updateCashValue(BigDecimal newValue) {
         BigDecimal oldValue = cashValue.get();
         if (!Objects.equals(oldValue, newValue)) {
             cashValue.set(newValue);
@@ -67,7 +69,7 @@ public class BalancerStateService {
         }
     }
 
-    public void updateShareQty(long newQty) {
+    private void updateShareQty(long newQty) {
         Long oldValue = shareQty.get();
         if (!Objects.equals(oldValue, newQty)) {
             shareQty.set(newQty);
@@ -75,7 +77,7 @@ public class BalancerStateService {
         }
     }
 
-    public void updateCashEtfQty(long newQty) {
+    private void updateCashEtfQty(long newQty) {
         Long oldValue = cashEtfQty.get();
         if (!Objects.equals(oldValue, newQty)) {
             cashEtfQty.set(newQty);
@@ -98,6 +100,31 @@ public class BalancerStateService {
             updatesCount++;
         }
         if (updatesCount > 0) {
+            notifyBalancerService("Position update");
+        }
+    }
+
+    public void updateFromPositionMonitor(Optional<BigDecimal> newCashValue, Optional<Long> newShareQty, Optional<Long> newCashEtfQty) {
+        AtomicInteger updatesCount = new AtomicInteger();
+        newCashValue
+                .filter(newValue -> !Objects.equals(cashValue.get(), newValue) )
+                .ifPresent(newValue -> {
+                    cashValue.set(newValue);
+                    updatesCount.getAndIncrement();
+                });
+        newShareQty
+                .filter(newValue -> !Objects.equals(shareQty.get(), newValue) )
+                .ifPresent(newValue -> {
+                    shareQty.set(newValue);
+                    updatesCount.getAndIncrement();
+                });
+        newCashEtfQty
+                .filter(newValue -> !Objects.equals(cashEtfQty.get(), newValue) )
+                .ifPresent(newValue -> {
+                    cashEtfQty.set(newValue);
+                    updatesCount.getAndIncrement();
+                });
+        if (updatesCount.get() > 0) {
             notifyBalancerService("Position update");
         }
     }

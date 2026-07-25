@@ -108,6 +108,7 @@ public class BalancerService {
                         qtyToSellAtUpperAlloc,
                         String.format("%.2f", sharePriceAtLowerAlloc),
                         qtyToBuyAtLowerAlloc);
+                // todo call checkAndPlaceLimitOrders
             }
         }
     }

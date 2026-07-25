@@ -5,6 +5,8 @@ import com.github.tink_api_with_charts.service.BalancerStateService;
 import com.github.tink_api_with_charts.utils.NumberUtils;
 import jakarta.annotation.PostConstruct;
 import lombok.SneakyThrows;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import ru.tinkoff.piapi.contract.v1.MoneyValue;
 import ru.tinkoff.piapi.contract.v1.PositionData;
@@ -24,7 +26,7 @@ import java.util.concurrent.ScheduledExecutorService;
 public class BalancerPositionsMonitor {
 
     public static final int INITIAL_SANDBOX_BALANCE = 1_000_000;
-    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(BalancerPositionsMonitor.class);
+    private static final Logger log = LoggerFactory.getLogger(BalancerPositionsMonitor.class);
 
     private final BalancerProperties properties;
     private final BalancerStateService balancerStateService;
@@ -80,23 +82,27 @@ public class BalancerPositionsMonitor {
                 .filter(moneyValue -> "rub".equals(moneyValue.getCurrency()))
                 .findFirst()
                 .map(NumberUtils::moneyValueBigDecimal);
+        Optional<BigDecimal> totalRubValueOpt = Optional.empty();
         if (availableRubValue.isPresent() || blockedRubValue.isPresent()) {
-            BigDecimal totalRubValue = availableRubValue.orElse(BigDecimal.ZERO)
-                    .add(blockedRubValue.orElse(BigDecimal.ZERO));
-            balancerStateService.updateCashValue(totalRubValue);
+            totalRubValueOpt = Optional.of(availableRubValue.orElse(BigDecimal.ZERO)
+                    .add(blockedRubValue.orElse(BigDecimal.ZERO)));
+//            balancerStateService.updateCashValue(totalRubValueOpt);
         }
 
-        positionUpdate.getSecuritiesList().stream()
+        Optional<Long> shareQtyOpt = positionUpdate.getSecuritiesList().stream()
                 .filter(positionsSecurities -> positionsSecurities.getInstrumentUid().equals(properties.getShareUid()))
                 .findFirst()
-                .map(ps -> ps.getBalance() + ps.getBlocked())
-                .ifPresent(balancerStateService::updateShareQty);
+                .map(ps -> ps.getBalance() + ps.getBlocked());
+//        shareQtyOpt
+//                .ifPresent(balancerStateService::updateShareQty);
 
-        positionUpdate.getSecuritiesList().stream()
+        Optional<Long> cashEtfQtyOpt = positionUpdate.getSecuritiesList().stream()
                 .filter(positionsSecurities -> positionsSecurities.getInstrumentUid().equals(properties.getCashEtfUid()))
                 .findFirst()
-                .map(ps -> ps.getBalance() + ps.getBlocked())
-                .ifPresent(balancerStateService::updateCashEtfQty);
+                .map(ps -> ps.getBalance() + ps.getBlocked());
+//        cashEtfQtyOpt
+//                .ifPresent(balancerStateService::updateCashEtfQty);
+        balancerStateService.updateFromPositionMonitor(totalRubValueOpt, shareQtyOpt, cashEtfQtyOpt);
     }
 
     @SneakyThrows
@@ -107,21 +113,22 @@ public class BalancerPositionsMonitor {
                 .findFirst()
                 .orElseThrow(() -> new IllegalStateException("Currency 'rub' not found between positions"));
         BigDecimal rubCash = NumberUtils.moneyValueBigDecimal(rubMoneyValue);
-        balancerStateService.updateCashValue(rubCash);
+//        balancerStateService.updateCashValue(rubCash);
 
         long shareQty = initialPositions.getSecuritiesList().stream()
                 .filter(positionsSecurities -> positionsSecurities.getInstrumentUid().equals(properties.getShareUid()))
                 .findFirst()
                 .map(PositionsSecurities::getBalance)
                 .orElse(0L);
-        balancerStateService.updateShareQty(shareQty);
+//        balancerStateService.updateShareQty(shareQty);
 
         long cashEtfQty = initialPositions.getSecuritiesList().stream()
                 .filter(positionsSecurities -> positionsSecurities.getInstrumentUid().equals(properties.getCashEtfUid()))
                 .findFirst()
                 .map(PositionsSecurities::getBalance)
                 .orElse(0L);
-        balancerStateService.updateCashEtfQty(cashEtfQty);
+//        balancerStateService.updateCashEtfQty(cashEtfQty);
+        balancerStateService.updateFromPositionInfo(rubCash, shareQty, cashEtfQty);
     }
 
 }

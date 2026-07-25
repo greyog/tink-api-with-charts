@@ -90,6 +90,7 @@ public class TradeExecutionService {
     private final ConcurrentSlidingCache<String> newOrdersCache = new ConcurrentSlidingCache<>();
     private final ConcurrentSlidingCache<String> filledOrdersCache = new ConcurrentSlidingCache<>();
     private final ConcurrentSlidingCache<String> cancelledOrdersCache = new ConcurrentSlidingCache<>();
+    private final ConcurrentSlidingCache<String> finishedOrdersCache = new ConcurrentSlidingCache<>();
 
     public TradeExecutionService(
             ServiceStubFactory serviceStubFactory,
@@ -235,7 +236,7 @@ public class TradeExecutionService {
         }
     }
 
-    public void marketBuy(String instrumentId, BigDecimal maxBuyPrice, long qty) {
+    public synchronized void marketBuy(String instrumentId, BigDecimal maxBuyPrice, long qty) {
 //        cancelOpenedOrdersForInstrument(instrumentId);
         var price = getInstrumentPrice(instrumentId, maxBuyPrice, OrderDirection.ORDER_DIRECTION_BUY);
         long quantity = Math.min(qty, getMaxBuyLots(instrumentId, price));
@@ -247,7 +248,7 @@ public class TradeExecutionService {
         log.info("Покупка по стратегии: {} по цене: {} (лотов: {})", instrumentId, price, quantity);
     }
 
-    public void marketSell(String instrumentId, BigDecimal minSellPrice, long qty) {
+    public synchronized void marketSell(String instrumentId, BigDecimal minSellPrice, long qty) {
 //        cancelOpenedOrdersForInstrument(instrumentId);
         long quantity = Math.min(qty, getMaxSellLots(instrumentId));
         var price = getInstrumentPrice(instrumentId, minSellPrice, OrderDirection.ORDER_DIRECTION_SELL);
@@ -311,10 +312,7 @@ public class TradeExecutionService {
         if (Optional.ofNullable(tradingAccountId).isEmpty()) {
             throw new IllegalStateException("Нельзя выставить ордер, так как не указан брокерский счет");
         }
-        if (uidToPendingOrderId.containsKey(instrumentId)) {
-            log.info("Выставление нового ордера невозможно, пока есть открытые ордеры по инструменту: {}", uidToPendingOrderId.get(instrumentId));
-            return;
-        }
+        if (hasPendingOrders(instrumentId)) return;
         if (isWaitingForPositionInfo.get()) {
             log.info("Выставление нового ордера невозможно, пока идёт обновление информации по позициям: {}", uidToPendingOrderId.get(instrumentId));
             return;
@@ -332,6 +330,14 @@ public class TradeExecutionService {
         uidToPendingOrderId.put(instrumentId, postOrderRequest);
         isWaitingForPositionInfo.set(true);
         var order = ordersService.callSyncMethod(stub -> stub.postOrderAsync(postOrderRequest));
+    }
+
+    private boolean hasPendingOrders(String instrumentId) {
+        if (uidToPendingOrderId.containsKey(instrumentId)  ) {
+            log.info("Выставление нового ордера невозможно, пока есть открытые ордеры по инструменту: {}", uidToPendingOrderId.get(instrumentId));
+            return true;
+        }
+        return false;
     }
 
     /**
