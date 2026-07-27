@@ -21,4 +21,13 @@ public class BalancerProperties {
 
   private long iisCashEtfQty = 2501;
 
+  /** Интервал периодической сверки заявок с API (мс) */
+  private long orderReconciliationIntervalMs = 30000;
+
+  /** Задержка перед первой проверкой статуса после отправки заявки (мс) */
+  private long orderRecoveryDelayMs = 5000;
+
+  /** Максимальное количество попыток восстановления статуса заявки */
+  private int maxRecoveryRetries = 5;
+
 }

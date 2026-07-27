@@ -1,14 +1,12 @@
 package com.github.tink_api_with_charts.service;
 
 import com.github.tink_api_with_charts.cinfiguration.BalancerProperties;
-import com.github.tink_api_with_charts.event.PositionInfoUpdatedEvent;
 import com.github.tink_api_with_charts.event.TradeCompletedEvent;
 import com.github.tink_api_with_charts.utils.ConcurrentSlidingCache;
 import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
-import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 import org.ta4j.core.Bar;
 import ru.tinkoff.piapi.contract.v1.CancelOrderRequest;
@@ -43,13 +41,11 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -82,7 +78,6 @@ public class TradeExecutionService {
     private final AtomicLong shareBuyQty = new AtomicLong(0);
     private final AtomicReference<BigDecimal> shareSellPrice = new AtomicReference<>();
     private final AtomicLong shareSellQty = new AtomicLong(0);
-    private final AtomicBoolean isWaitingForPositionInfo = new AtomicBoolean(false);
 
     private final Map<String, String> instrumentLastOrderIds = new ConcurrentHashMap<>();
     private final Map<String, BigDecimal> uidToMinPriceIncrement = new ConcurrentHashMap<>();
@@ -91,6 +86,8 @@ public class TradeExecutionService {
     private final ConcurrentSlidingCache<String> filledOrdersCache = new ConcurrentSlidingCache<>();
     private final ConcurrentSlidingCache<String> cancelledOrdersCache = new ConcurrentSlidingCache<>();
     private final ConcurrentSlidingCache<String> finishedOrdersCache = new ConcurrentSlidingCache<>();
+    
+    private TradeExecutionManager tradeExecutionManager;
 
     public TradeExecutionService(
             ServiceStubFactory serviceStubFactory,
@@ -116,11 +113,17 @@ public class TradeExecutionService {
 
     @PostConstruct
     public void start() {
+        if (tradingAccountId == null) {
+            throw new IllegalStateException("Нельзя выставлять заявки, так как не указан брокерский счет");
+        }
         var wrapper = streamServiceStubFactory.newResilienceServerSideStream(
                 OrderStateStreamWrapperConfiguration.builder(streamHealthcheckExecutor)
                         .addOnResponseListener(this::onNextOrder)
                         .addOnConnectListener(() -> {
                             log.info("Стрим ордеров успешно подключен");
+                            if (tradeExecutionManager != null) {
+                                tradeExecutionManager.handleConnectionRestored();
+                            }
                             initOrders();
                         })
                         .build());
@@ -188,6 +191,10 @@ public class TradeExecutionService {
             && cancelledOrdersCache.checkContainsAndAdd(order.getOrderRequestId())) {
             return;
         }
+        
+        // Уведомить менеджер об обновлении статуса
+        notifyManagerAboutOrderUpdate(orderState);
+        
         log.info("{}", orderState);
         var instrumentId = order.getInstrumentUid();
         log.info("Новый ордер с id: {}", order.getOrderRequestId());
@@ -309,14 +316,7 @@ public class TradeExecutionService {
      * @param price        - цена инструмента
      */
     private void postLimitOrder(String instrumentId, OrderDirection direction, long quantity, BigDecimal price) {
-        if (Optional.ofNullable(tradingAccountId).isEmpty()) {
-            throw new IllegalStateException("Нельзя выставить ордер, так как не указан брокерский счет");
-        }
         if (hasPendingOrders(instrumentId)) return;
-        if (isWaitingForPositionInfo.get()) {
-            log.info("Выставление нового ордера невозможно, пока идёт обновление информации по позициям: {}", uidToPendingOrderId.get(instrumentId));
-            return;
-        }
         var postOrderRequest = PostOrderAsyncRequest.newBuilder()
                 .setOrderId(UUID.randomUUID().toString())
                 .setAccountId(tradingAccountId)
@@ -328,7 +328,6 @@ public class TradeExecutionService {
                 .build();
 //        instrumentLastOrderIds.put(instrumentId, order.getOrderRequestId());
         uidToPendingOrderId.put(instrumentId, postOrderRequest);
-        isWaitingForPositionInfo.set(true);
         var order = ordersService.callSyncMethod(stub -> stub.postOrderAsync(postOrderRequest));
     }
 
@@ -453,9 +452,81 @@ public class TradeExecutionService {
         return price.divide(minPriceIncrement, 0, RoundingMode.DOWN).multiply(minPriceIncrement);
     }
 
-    @EventListener
-    public void onPositionInfoUpdated(PositionInfoUpdatedEvent event) {
-        isWaitingForPositionInfo.set(false);
+    // ========== Методы для TradeExecutionManager ==========
+
+    /**
+     * Установить менеджер для отслеживания заявок
+     */
+    public void setTradeExecutionManager(TradeExecutionManager tradeExecutionManager) {
+        this.tradeExecutionManager = tradeExecutionManager;
+    }
+
+    /**
+     * Отправить заявку с отслеживанием через TradeExecutionManager
+     */
+    public void postLimitOrderWithTracking(String orderId, String instrumentId, BigDecimal price, 
+                                           long quantity, OrderDirection direction) {
+        var postOrderRequest = PostOrderAsyncRequest.newBuilder()
+                .setOrderId(orderId)
+                .setAccountId(tradingAccountId)
+                .setInstrumentId(instrumentId)
+                .setDirection(direction)
+                .setQuantity(quantity)
+                .setPrice(NumberMapper.bigDecimalToQuotation(price))
+                .setOrderType(OrderType.ORDER_TYPE_LIMIT)
+                .build();
+        
+        uidToPendingOrderId.put(instrumentId, postOrderRequest);
+        
+        log.info("Posting order {} for {}: {} {} @ {}", orderId, instrumentId, quantity, direction, price);
+        var order = ordersService.callSyncMethod(stub -> stub.postOrderAsync(postOrderRequest));
+    }
+
+    /**
+     * Отправить market заявку с отслеживанием через TradeExecutionManager
+     */
+    public void postMarketOrderWithTracking(String orderId, String instrumentId, long quantity, OrderDirection direction) {
+        var postOrderRequest = PostOrderAsyncRequest.newBuilder()
+                .setOrderId(orderId)
+                .setAccountId(tradingAccountId)
+                .setInstrumentId(instrumentId)
+                .setDirection(direction)
+                .setQuantity(quantity)
+                .setOrderType(OrderType.ORDER_TYPE_MARKET)
+                .build();
+        
+        uidToPendingOrderId.put(instrumentId, postOrderRequest);
+        
+        log.info("Posting market order {} for {}: {} {}", orderId, instrumentId, quantity, direction);
+        var order = ordersService.callSyncMethod(stub -> stub.postOrderAsync(postOrderRequest));
+    }
+
+    /**
+     * Получить статус заявки из API
+     */
+    public OrderState getOrderStateFromApi(String orderId) {
+        // Запрос всех активных заявок и поиск по orderId
+        // В идеале нужно использовать метод получения конкретной заявки, 
+        // но если его нет, фильтруем из списка
+        var ordersRequest = GetOrdersRequest.newBuilder()
+                .setAccountId(tradingAccountId)
+                .build();
+        
+        var ordersResponse = ordersService.callSyncMethod(stub -> stub.getOrders(ordersRequest));
+        
+        return ordersResponse.getOrdersList().stream()
+                .filter(order -> order.getOrderRequestId().equals(orderId))
+                .findFirst()
+                .orElse(null);
+    }
+
+    /**
+     * Обновить статус заявки в менеджере
+     */
+    private void notifyManagerAboutOrderUpdate(OrderStateStreamResponse orderStateStreamResponse) {
+        if (tradeExecutionManager != null && orderStateStreamResponse.hasOrderState()) {
+            tradeExecutionManager.updateOrderStatus(orderStateStreamResponse.getOrderState());
+        }
     }
 
 }

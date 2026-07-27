@@ -17,7 +17,7 @@ public class BalancerService {
     private static final BigDecimal SELL_ORDER_OFFSET =  BigDecimal.ONE.subtract(THROW_FOR_MARKET_ORDER);
 
     private final BalancerProperties properties;
-    private final TradeExecutionService tradeExecutionService;
+    private final TradeExecutionManager tradeExecutionManager;
 
     private final double upperAlloc;
     private final double lowerAlloc;
@@ -30,9 +30,9 @@ public class BalancerService {
     private final AtomicLong lastQtyToSellAtUpperAlloc = new AtomicLong(0);
     private final AtomicLong lastQtyToBuyAtLowerAlloc = new AtomicLong(0);
 
-    public BalancerService(BalancerProperties properties, TradeExecutionService tradeExecutionService) {
+    public BalancerService(BalancerProperties properties, TradeExecutionManager tradeExecutionManager) {
         this.properties = properties;
-        this.tradeExecutionService = tradeExecutionService;
+        this.tradeExecutionManager = tradeExecutionManager;
         deltaUp = properties.getRebalanceThresholdUp();
         deltaDown = properties.getRebalanceThresholdDown();
         targetAlloc = properties.getTargetShareAllocation();
@@ -61,7 +61,7 @@ public class BalancerService {
                     String.format("%.6f", shareAllocation),
                     shareChange
             );
-            tradeExecutionService.marketSell(properties.getShareUid(), shareBidPrice.multiply(SELL_ORDER_OFFSET), shareChange);
+            tradeExecutionManager.submitSellOrder(properties.getShareUid(), shareBidPrice.multiply(SELL_ORDER_OFFSET), shareChange);
         } else if (shareAllocation < lowerAlloc) {
             long shareChange = targetShareQty - shareQty;
             log.info("Price {}, \t, Share Qty {}, \tTarget alloc: {}, \tcurrent share alloc: {}. \tNeed to Buy: {} shares",
@@ -71,7 +71,7 @@ public class BalancerService {
                     String.format("%.6f", shareAllocation),
                     shareChange
             );
-            tradeExecutionService.marketBuy(properties.getShareUid(), shareBidPrice.multiply(BUY_ORDER_OFFSET), shareChange);
+            tradeExecutionManager.submitBuyOrder(properties.getShareUid(), shareBidPrice.multiply(BUY_ORDER_OFFSET), shareChange);
         } else {
             double sharePriceAtUpperAlloc = totalCashValue / shareQty * upperAlloc / (1 - upperAlloc);
             long qtyToSellAtUpperAlloc = Math.round(shareQty * deltaUp / upperAlloc);
