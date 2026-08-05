@@ -45,5 +45,6 @@
 
     <!-- Логгер для отладки gRPC -->
     <logger name="ru.ttech.piapi.core.connector.internal.LoggingDebugInterceptor" level="DEBUG"/>
+    <logger name="com.github.tink_api_with_charts.service.TradeExecutionManager" level="DEBUG"/>
 
 </configuration>

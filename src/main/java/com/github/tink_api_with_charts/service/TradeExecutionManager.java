@@ -79,6 +79,8 @@ public class TradeExecutionManager {
     @EventListener
     public void onPositionInfoUpdated(PositionInfoUpdatedEvent event) {
         waitingForPositionInfo.set(false);
+        log.debug("Released global position lock after PositionInfoUpdatedEvent");
+
     }
 
     // ========== Публичные методы для BalancerService ==========
@@ -87,7 +89,7 @@ public class TradeExecutionManager {
      * Проверить, можно ли отправить новую заявку по инструменту
      * (для market orders - блокировка до подтверждения предыдущей)
      */
-    public boolean canSubmitOrder(String instrumentUid) {
+    public boolean canSubmitMarketOrder(String instrumentUid) {
         // Проверка глобальной блокировки ожидания информации по позициям
         if (waitingForPositionInfo.get()) {
             log.warn("Cannot submit order: waiting for position info update");
@@ -103,12 +105,14 @@ public class TradeExecutionManager {
      * Отправить заявку на покупку
      * @return OrderExecutionState для отслеживания статуса
      */
-    public OrderExecutionState submitBuyOrder(String instrumentUid, BigDecimal price, long quantity) {
+    public OrderExecutionState submitLimitBuyOrder(String instrumentUid, BigDecimal price, long quantity) {
         // Проверка блокировки
-        if (!canSubmitOrder(instrumentUid)) {
-            log.warn("Cannot submit buy order: waiting for position info or instrument {} is locked", instrumentUid);
-            throw new IllegalStateException("Cannot submit order: waiting for position info or instrument " + instrumentUid + " is locked");
-        }
+//        if (!canSubmitMarketOrder(instrumentUid)) {
+//            log.warn("Cannot submit buy order: waiting for position info or instrument {} is locked", instrumentUid);
+//            throw new IllegalStateException("Cannot submit order: waiting for position info or instrument " + instrumentUid + " is locked");
+//        }
+
+
 
         String orderId = UUID.randomUUID().toString();
         OrderExecutionState state = new OrderExecutionState(
@@ -120,13 +124,13 @@ public class TradeExecutionManager {
         );
         state.setStatus(OrderExecutionReportStatus.EXECUTION_REPORT_STATUS_NEW);
         state.setPendingConfirmation(true);
-        state.setWaitingForPositionInfo(true);
+//        state.setWaitingForPositionInfo(true);
 
         activeOrders.put(orderId, state);
         scheduleStatusRecovery(orderId);
 
         // Установка глобальной блокировки
-        waitingForPositionInfo.set(true);
+//        waitingForPositionInfo.set(true);
 
         tradeExecutionService.postLimitOrderWithTracking(orderId, instrumentUid, price, quantity, OrderDirection.ORDER_DIRECTION_BUY);
 
@@ -138,12 +142,12 @@ public class TradeExecutionManager {
      * Отправить заявку на продажу
      * @return OrderExecutionState для отслеживания статуса
      */
-    public OrderExecutionState submitSellOrder(String instrumentUid, BigDecimal price, long quantity) {
+    public OrderExecutionState submitLimitSellOrder(String instrumentUid, BigDecimal price, long quantity) {
         // Проверка блокировки
-        if (!canSubmitOrder(instrumentUid)) {
-            log.warn("Cannot submit sell order: waiting for position info or instrument {} is locked", instrumentUid);
-            throw new IllegalStateException("Cannot submit order: waiting for position info or instrument " + instrumentUid + " is locked");
-        }
+//        if (!canSubmitMarketOrder(instrumentUid)) {
+//            log.warn("Cannot submit sell order: waiting for position info or instrument {} is locked", instrumentUid);
+//            throw new IllegalStateException("Cannot submit order: waiting for position info or instrument " + instrumentUid + " is locked");
+//        }
 
         String orderId = UUID.randomUUID().toString();
         OrderExecutionState state = new OrderExecutionState(
@@ -155,13 +159,13 @@ public class TradeExecutionManager {
         );
         state.setStatus(OrderExecutionReportStatus.EXECUTION_REPORT_STATUS_NEW);
         state.setPendingConfirmation(true);
-        state.setWaitingForPositionInfo(true);
+//        state.setWaitingForPositionInfo(true);
 
         activeOrders.put(orderId, state);
         scheduleStatusRecovery(orderId);
 
         // Установка глобальной блокировки
-        waitingForPositionInfo.set(true);
+//        waitingForPositionInfo.set(true);
 
         tradeExecutionService.postLimitOrderWithTracking(orderId, instrumentUid, price, quantity, OrderDirection.ORDER_DIRECTION_SELL);
 
@@ -171,88 +175,78 @@ public class TradeExecutionManager {
 
     /**
      * Отправить market заявку на покупку (с блокировкой инструмента)
-     * @return OrderExecutionState для отслеживания статуса
      */
-    public OrderExecutionState submitMarketBuyOrder(String instrumentUid, long quantity) {
+    public void submitMarketBuyOrder(String instrumentUid, long quantity) {
         // Проверка блокировки
-        if (!canSubmitOrder(instrumentUid)) {
+        if (!canSubmitMarketOrder(instrumentUid)) {
             log.warn("Cannot submit market buy order: waiting for position info or instrument {} is locked", instrumentUid);
             throw new IllegalStateException("Cannot submit order: waiting for position info or instrument " + instrumentUid + " is locked");
         }
 
-        // Установка блокировки по инструменту
-        instrumentLocks.computeIfAbsent(instrumentUid, k -> new AtomicBoolean(false));
-        AtomicBoolean instrumentLock = instrumentLocks.get(instrumentUid);
-        if (!instrumentLock.compareAndSet(false, true)) {
-            throw new IllegalStateException("Instrument " + instrumentUid + " is locked due to pending order");
-        }
-
-        String orderId = UUID.randomUUID().toString();
-        OrderExecutionState state = new OrderExecutionState(
-                orderId,
-                instrumentUid,
-                OrderDirection.ORDER_DIRECTION_BUY,
-                quantity,
-                BigDecimal.ZERO // Цена будет определена при исполнении
-        );
-        state.setStatus(OrderExecutionReportStatus.EXECUTION_REPORT_STATUS_NEW);
-        state.setPendingConfirmation(true);
-        state.setMarketOrder(true);
-        state.setWaitingForPositionInfo(true);
-
-        activeOrders.put(orderId, state);
-        scheduleStatusRecovery(orderId);
-
+        checkInstrumentLock(instrumentUid);
+        String orderId = prepareOrder(instrumentUid, quantity, OrderDirection.ORDER_DIRECTION_BUY, true);
         // Установка глобальной блокировки
         waitingForPositionInfo.set(true);
 
         tradeExecutionService.postMarketOrderWithTracking(orderId, instrumentUid, quantity, OrderDirection.ORDER_DIRECTION_BUY);
-
         log.info("Created market buy order {}: {} x {}", orderId, instrumentUid, quantity);
-        return state;
     }
 
     /**
      * Отправить market заявку на продажу (с блокировкой инструмента)
-     * @return OrderExecutionState для отслеживания статуса
      */
-    public OrderExecutionState submitMarketSellOrder(String instrumentUid, long quantity) {
+    public void submitMarketSellOrder(String instrumentUid, long quantity) {
         // Проверка блокировки
-        if (!canSubmitOrder(instrumentUid)) {
+        if (!canSubmitMarketOrder(instrumentUid)) {
             log.warn("Cannot submit market sell order: waiting for position info or instrument {} is locked", instrumentUid);
             throw new IllegalStateException("Cannot submit order: waiting for position info or instrument " + instrumentUid + " is locked");
         }
 
+        checkInstrumentLock(instrumentUid);
+        String orderId = prepareOrder(instrumentUid, quantity, OrderDirection.ORDER_DIRECTION_SELL, true);
+        // Установка глобальной блокировки
+        waitingForPositionInfo.set(true);
+
+        tradeExecutionService.postMarketOrderWithTracking(orderId, instrumentUid, quantity, OrderDirection.ORDER_DIRECTION_SELL);
+        log.info("Created market sell order {}: {} x {}", orderId, instrumentUid, quantity);
+    }
+
+    public void submitBalancerLimitOrders(String instrumentUid, BigDecimal priceBuy, long qtyBuy, BigDecimal priceSell, long qtySell) {
+        tradeExecutionService.cancelOpenedOrdersForInstrument(instrumentUid);
+
+        String buyOrderId = prepareOrder(instrumentUid, qtyBuy, OrderDirection.ORDER_DIRECTION_BUY, false);
+        tradeExecutionService.checkedLimitBuy(buyOrderId, instrumentUid, priceBuy, qtyBuy);
+
+        String sellOrderId = prepareOrder(instrumentUid, qtySell, OrderDirection.ORDER_DIRECTION_SELL, false);
+        tradeExecutionService.checkedLimitSell(sellOrderId, instrumentUid, priceSell, qtySell);
+    }
+
+    private String prepareOrder(String instrumentUid, long qtyBuy, OrderDirection orderDirection, boolean marketOrder) {
+        String orderId = UUID.randomUUID().toString();
+        OrderExecutionState state = new OrderExecutionState(
+                orderId,
+                instrumentUid,
+                orderDirection,
+                qtyBuy,
+                BigDecimal.ZERO // Цена будет определена при исполнении
+        );
+        state.setStatus(OrderExecutionReportStatus.EXECUTION_REPORT_STATUS_NEW);
+        state.setPendingConfirmation(true);
+        state.setMarketOrder(marketOrder);
+        state.setWaitingForPositionInfo(marketOrder);
+
+        activeOrders.put(orderId, state);
+        scheduleStatusRecovery(orderId);
+        return orderId;
+    }
+
+    private void checkInstrumentLock(String instrumentUid) {
         // Установка блокировки по инструменту
         instrumentLocks.computeIfAbsent(instrumentUid, k -> new AtomicBoolean(false));
         AtomicBoolean instrumentLock = instrumentLocks.get(instrumentUid);
         if (!instrumentLock.compareAndSet(false, true)) {
             throw new IllegalStateException("Instrument " + instrumentUid + " is locked due to pending order");
         }
-
-        String orderId = UUID.randomUUID().toString();
-        OrderExecutionState state = new OrderExecutionState(
-                orderId,
-                instrumentUid,
-                OrderDirection.ORDER_DIRECTION_SELL,
-                quantity,
-                BigDecimal.ZERO // Цена будет определена при исполнении
-        );
-        state.setStatus(OrderExecutionReportStatus.EXECUTION_REPORT_STATUS_NEW);
-        state.setPendingConfirmation(true);
-        state.setMarketOrder(true);
-        state.setWaitingForPositionInfo(true);
-
-        activeOrders.put(orderId, state);
-        scheduleStatusRecovery(orderId);
-
-        // Установка глобальной блокировки
-        waitingForPositionInfo.set(true);
-
-        tradeExecutionService.postMarketOrderWithTracking(orderId, instrumentUid, quantity, OrderDirection.ORDER_DIRECTION_SELL);
-
-        log.info("Created market sell order {}: {} x {}", orderId, instrumentUid, quantity);
-        return state;
     }
 
     /**
@@ -554,4 +548,5 @@ public class TradeExecutionManager {
     public boolean isStreamConnected() {
         return streamConnected.get();
     }
+
 }

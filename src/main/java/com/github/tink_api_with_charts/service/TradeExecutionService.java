@@ -4,6 +4,7 @@ import com.github.tink_api_with_charts.cinfiguration.BalancerProperties;
 import com.github.tink_api_with_charts.event.TradeCompletedEvent;
 import com.github.tink_api_with_charts.utils.ConcurrentSlidingCache;
 import jakarta.annotation.PostConstruct;
+import lombok.Setter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
@@ -81,12 +82,16 @@ public class TradeExecutionService {
 
     private final Map<String, String> instrumentLastOrderIds = new ConcurrentHashMap<>();
     private final Map<String, BigDecimal> uidToMinPriceIncrement = new ConcurrentHashMap<>();
-    private final Map<String, PostOrderAsyncRequest> uidToPendingOrderId = new ConcurrentHashMap<>();
     private final ConcurrentSlidingCache<String> newOrdersCache = new ConcurrentSlidingCache<>();
     private final ConcurrentSlidingCache<String> filledOrdersCache = new ConcurrentSlidingCache<>();
     private final ConcurrentSlidingCache<String> cancelledOrdersCache = new ConcurrentSlidingCache<>();
     private final ConcurrentSlidingCache<String> finishedOrdersCache = new ConcurrentSlidingCache<>();
-    
+
+    /**
+     * -- SETTER --
+     *  Установить менеджер для отслеживания заявок
+     */
+    @Setter
     private TradeExecutionManager tradeExecutionManager;
 
     public TradeExecutionService(
@@ -197,7 +202,9 @@ public class TradeExecutionService {
         
         log.info("{}", orderState);
         var instrumentId = order.getInstrumentUid();
-        log.info("Новый ордер с id: {}", order.getOrderRequestId());
+        if (order.getExecutionReportStatus() == OrderExecutionReportStatus.EXECUTION_REPORT_STATUS_NEW) {
+            log.info("По инструменту {} ( uid {}) создана заявка {}", order.getTicker(), instrumentId, order.getOrderRequestId());
+        }
         if (order.getExecutionReportStatus() == OrderExecutionReportStatus.EXECUTION_REPORT_STATUS_FILL) {
             log.info("Сделка {} исполнена", order.getOrderRequestId());
             if (order.getDirection() == OrderDirection.ORDER_DIRECTION_BUY) {
@@ -219,7 +226,6 @@ public class TradeExecutionService {
         if (Set.of(OrderExecutionReportStatus.EXECUTION_REPORT_STATUS_CANCELLED,
                 OrderExecutionReportStatus.EXECUTION_REPORT_STATUS_FILL,
                 OrderExecutionReportStatus.EXECUTION_REPORT_STATUS_REJECTED).contains(order.getExecutionReportStatus())) {
-            uidToPendingOrderId.remove(order.getInstrumentUid());
             log.info("По инструменту {} ( uid {}) исполнена или отменена заявка {}", order.getTicker(), instrumentId, order.getOrderRequestId());
         }
         if (!order.getInstrumentUid().equals(properties.getShareUid())) {
@@ -243,27 +249,26 @@ public class TradeExecutionService {
         }
     }
 
-    public synchronized void marketBuy(String instrumentId, BigDecimal maxBuyPrice, long qty) {
-//        cancelOpenedOrdersForInstrument(instrumentId);
+    public void checkedLimitBuy(String orderId, String instrumentId, BigDecimal maxBuyPrice, long qty) {
         var price = getInstrumentPrice(instrumentId, maxBuyPrice, OrderDirection.ORDER_DIRECTION_BUY);
         long quantity = Math.min(qty, getMaxBuyLots(instrumentId, price));
         if (quantity < qty) {
-            log.warn("Недостаточно средств для покупки");
+            log.warn("Недостаточно средств для покупки. Заявка на {}, доступно {}", qty, quantity);
             return;
         }
-        postLimitOrder(instrumentId, OrderDirection.ORDER_DIRECTION_BUY, quantity, price);
+        postLimitOrderWithTracking(orderId, instrumentId, price, quantity,OrderDirection.ORDER_DIRECTION_BUY);
         log.info("Покупка по стратегии: {} по цене: {} (лотов: {})", instrumentId, price, quantity);
     }
 
-    public synchronized void marketSell(String instrumentId, BigDecimal minSellPrice, long qty) {
-//        cancelOpenedOrdersForInstrument(instrumentId);
-        long quantity = Math.min(qty, getMaxSellLots(instrumentId));
-        var price = getInstrumentPrice(instrumentId, minSellPrice, OrderDirection.ORDER_DIRECTION_SELL);
+    public void checkedLimitSell(String orderId, String instrumentId, BigDecimal minSellPrice, long qty) {
+        long maxSellLots = getMaxSellLots(instrumentId);
+        long quantity = Math.min(qty, maxSellLots);
         if (quantity <= 0) {
-            log.warn("Недостаточно средств на продажу");
+            log.warn("Недостаточно активов для продажи. Заявка на {}, доступно {}", qty, maxSellLots);
             return;
         }
-        postLimitOrder(instrumentId, OrderDirection.ORDER_DIRECTION_SELL, quantity, price);
+        var price = getInstrumentPrice(instrumentId, minSellPrice, OrderDirection.ORDER_DIRECTION_SELL);
+        postLimitOrderWithTracking(orderId, instrumentId, price, quantity,OrderDirection.ORDER_DIRECTION_SELL);
         log.info("Продажа по стратегии: {} по цене: {} (лотов: {})", instrumentId, price, quantity);
     }
 
@@ -316,7 +321,6 @@ public class TradeExecutionService {
      * @param price        - цена инструмента
      */
     private void postLimitOrder(String instrumentId, OrderDirection direction, long quantity, BigDecimal price) {
-        if (hasPendingOrders(instrumentId)) return;
         var postOrderRequest = PostOrderAsyncRequest.newBuilder()
                 .setOrderId(UUID.randomUUID().toString())
                 .setAccountId(tradingAccountId)
@@ -326,17 +330,7 @@ public class TradeExecutionService {
                 .setPrice(NumberMapper.bigDecimalToQuotation(price))
                 .setOrderType(OrderType.ORDER_TYPE_LIMIT)
                 .build();
-//        instrumentLastOrderIds.put(instrumentId, order.getOrderRequestId());
-        uidToPendingOrderId.put(instrumentId, postOrderRequest);
         var order = ordersService.callSyncMethod(stub -> stub.postOrderAsync(postOrderRequest));
-    }
-
-    private boolean hasPendingOrders(String instrumentId) {
-        if (uidToPendingOrderId.containsKey(instrumentId)  ) {
-            log.info("Выставление нового ордера невозможно, пока есть открытые ордеры по инструменту: {}", uidToPendingOrderId.get(instrumentId));
-            return true;
-        }
-        return false;
     }
 
     /**
@@ -344,7 +338,7 @@ public class TradeExecutionService {
      *
      * @param instrumentId инструмент
      */
-    private void cancelOpenedOrdersForInstrument(String instrumentId) {
+    public void cancelOpenedOrdersForInstrument(String instrumentId) {
         var ordersRequest = GetOrdersRequest.newBuilder()
                 .setAccountId(tradingAccountId)
                 .build();
@@ -358,7 +352,7 @@ public class TradeExecutionService {
                 .forEach(order -> ordersService.callSyncMethod(stub ->
                         stub.cancelOrder(cancelOrderRequestBuilder.setOrderId(order.getOrderId()).build())
                 ));
-        log.info("Отменены все открытые ордера по инструменту {}", instrumentId);
+        log.info("Отменены все открытые ордера ({} штук) по инструменту {}", ordersResponse.getOrdersList().size(), instrumentId);
     }
 
     /**
@@ -455,13 +449,6 @@ public class TradeExecutionService {
     // ========== Методы для TradeExecutionManager ==========
 
     /**
-     * Установить менеджер для отслеживания заявок
-     */
-    public void setTradeExecutionManager(TradeExecutionManager tradeExecutionManager) {
-        this.tradeExecutionManager = tradeExecutionManager;
-    }
-
-    /**
      * Отправить заявку с отслеживанием через TradeExecutionManager
      */
     public void postLimitOrderWithTracking(String orderId, String instrumentId, BigDecimal price, 
@@ -475,10 +462,8 @@ public class TradeExecutionService {
                 .setPrice(NumberMapper.bigDecimalToQuotation(price))
                 .setOrderType(OrderType.ORDER_TYPE_LIMIT)
                 .build();
-        
-        uidToPendingOrderId.put(instrumentId, postOrderRequest);
-        
-        log.info("Posting order {} for {}: {} {} @ {}", orderId, instrumentId, quantity, direction, price);
+
+        log.info("Posting limit order {} for instrument {}: qty {}, direction {} @ price {}", orderId, instrumentId, quantity, direction, price);
         var order = ordersService.callSyncMethod(stub -> stub.postOrderAsync(postOrderRequest));
     }
 
@@ -494,10 +479,8 @@ public class TradeExecutionService {
                 .setQuantity(quantity)
                 .setOrderType(OrderType.ORDER_TYPE_MARKET)
                 .build();
-        
-        uidToPendingOrderId.put(instrumentId, postOrderRequest);
-        
-        log.info("Posting market order {} for {}: {} {}", orderId, instrumentId, quantity, direction);
+
+        log.info("Posting market order {} for instrument {}: qty {},  direction {}", orderId, instrumentId, quantity, direction);
         var order = ordersService.callSyncMethod(stub -> stub.postOrderAsync(postOrderRequest));
     }
 
