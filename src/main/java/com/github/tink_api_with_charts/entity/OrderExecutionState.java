@@ -14,7 +14,7 @@ import java.time.Instant;
 @Data
 public class OrderExecutionState {
     
-    private final String orderId;              // orderRequestId
+    private final String requestId;              // orderRequestId
     private final String instrumentUid;        // идентификатор инструмента
     private final OrderDirection direction;    // направление
     private final long quantity;               // запрошенное количество
@@ -32,10 +32,11 @@ public class OrderExecutionState {
     private Instant lastSyncAttempt;           // последняя попытка синхронизации
     private boolean marketOrder;               // флаг market заявки (с блокировкой инструмента)
     private boolean waitingForPositionInfo;    // флаг ожидания обновления информации по позициям
-    
-    public OrderExecutionState(String orderId, String instrumentUid, OrderDirection direction, 
+    private String tradeIntentId;              // trade_intent_id биржевой айди заявки
+
+    public OrderExecutionState(String requestId, String instrumentUid, OrderDirection direction,
                                long quantity, BigDecimal price) {
-        this.orderId = orderId;
+        this.requestId = requestId;
         this.instrumentUid = instrumentUid;
         this.direction = direction;
         this.quantity = quantity;

@@ -71,7 +71,7 @@ public class BalancerService {
                     String.format("%.6f", shareAllocation),
                     shareChange
             );
-            tradeExecutionManager.submitMarketBuyOrder(properties.getShareUid(), shareChange);
+//            tradeExecutionManager.submitMarketBuyOrder(properties.getShareUid(), shareChange);
         } else {
             double sharePriceAtUpperAlloc = totalCashValue / shareQty * upperAlloc / (1 - upperAlloc);
             long qtyToSellAtUpperAlloc = Math.round(shareQty * deltaUp / upperAlloc);
@@ -108,7 +108,7 @@ public class BalancerService {
                         qtyToSellAtUpperAlloc,
                         String.format("%.2f", sharePriceAtLowerAlloc),
                         qtyToBuyAtLowerAlloc);
-                tradeExecutionManager.submitBalancerLimitOrders(properties.getShareUid(), lastSharePriceAtLowerAlloc.get(), lastQtyToBuyAtLowerAlloc.get(), lastSharePriceAtUpperAlloc.get(), lastQtyToSellAtUpperAlloc.get());
+//                tradeExecutionManager.submitBalancerLimitOrders(properties.getShareUid(), lastSharePriceAtLowerAlloc.get(), lastQtyToBuyAtLowerAlloc.get(), lastSharePriceAtUpperAlloc.get(), lastQtyToSellAtUpperAlloc.get());
             }
         }
     }

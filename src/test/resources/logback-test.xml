@@ -11,12 +11,12 @@
     <!-- RollingFileAppender с ZIP-компрессией -->
     <appender name="ZIP_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
         <!-- Текущий активный файл логов -->
-        <file>logs/app.log</file>
+        <file>logs/app-test.log</file>
 
         <!-- Политика ротации: ежедневная + по размеру -->
         <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
             <!-- Путь к архивным файлам с шаблоном даты и .zip расширением -->
-            <fileNamePattern>logs/archived/app.%d{yyyy-MM-dd}.%i.zip</fileNamePattern>
+            <fileNamePattern>logs/archived/app-test.%d{yyyy-MM-dd}.%i.zip</fileNamePattern>
 
             <!-- Хранить архивы 30 дней -->
             <maxHistory>30</maxHistory>
@@ -44,7 +44,7 @@
     </root>
 
     <!-- Логгер для отладки gRPC -->
-    <logger name="ru.ttech.piapi.core.connector.internal.LoggingDebugInterceptor" level="INFO"/>
+    <logger name="ru.ttech.piapi.core.connector.internal.LoggingDebugInterceptor" level="DEBUG"/>
     <logger name="com.github.tink_api_with_charts.service.TradeExecutionManager" level="DEBUG"/>
 
 </configuration>

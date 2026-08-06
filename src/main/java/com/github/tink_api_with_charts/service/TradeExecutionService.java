@@ -3,6 +3,7 @@ package com.github.tink_api_with_charts.service;
 import com.github.tink_api_with_charts.cinfiguration.BalancerProperties;
 import com.github.tink_api_with_charts.event.TradeCompletedEvent;
 import com.github.tink_api_with_charts.utils.ConcurrentSlidingCache;
+import jakarta.annotation.Nullable;
 import jakarta.annotation.PostConstruct;
 import lombok.Setter;
 import org.slf4j.Logger;
@@ -13,6 +14,7 @@ import org.ta4j.core.Bar;
 import ru.tinkoff.piapi.contract.v1.CancelOrderRequest;
 import ru.tinkoff.piapi.contract.v1.CandleInstrument;
 import ru.tinkoff.piapi.contract.v1.GetMaxLotsRequest;
+import ru.tinkoff.piapi.contract.v1.GetOrderStateRequest;
 import ru.tinkoff.piapi.contract.v1.GetOrdersRequest;
 import ru.tinkoff.piapi.contract.v1.GetOrdersResponse;
 import ru.tinkoff.piapi.contract.v1.InstrumentIdType;
@@ -249,27 +251,31 @@ public class TradeExecutionService {
         }
     }
 
-    public void checkedLimitBuy(String orderId, String instrumentId, BigDecimal maxBuyPrice, long qty) {
+    @Nullable
+    public String checkedLimitBuy(String orderId, String instrumentId, BigDecimal maxBuyPrice, long qty) {
         var price = getInstrumentPrice(instrumentId, maxBuyPrice, OrderDirection.ORDER_DIRECTION_BUY);
         long quantity = Math.min(qty, getMaxBuyLots(instrumentId, price));
         if (quantity < qty) {
             log.warn("Недостаточно средств для покупки. Заявка на {}, доступно {}", qty, quantity);
-            return;
+            return null;
         }
-        postLimitOrderWithTracking(orderId, instrumentId, price, quantity,OrderDirection.ORDER_DIRECTION_BUY);
+        String tradeIntentId = postLimitOrderWithTracking(orderId, instrumentId, price, quantity,OrderDirection.ORDER_DIRECTION_BUY);
         log.info("Покупка по стратегии: {} по цене: {} (лотов: {})", instrumentId, price, quantity);
+        return tradeIntentId;
     }
 
-    public void checkedLimitSell(String orderId, String instrumentId, BigDecimal minSellPrice, long qty) {
+    @Nullable
+    public String checkedLimitSell(String orderId, String instrumentId, BigDecimal minSellPrice, long qty) {
         long maxSellLots = getMaxSellLots(instrumentId);
         long quantity = Math.min(qty, maxSellLots);
         if (quantity <= 0) {
             log.warn("Недостаточно активов для продажи. Заявка на {}, доступно {}", qty, maxSellLots);
-            return;
+            return null;
         }
         var price = getInstrumentPrice(instrumentId, minSellPrice, OrderDirection.ORDER_DIRECTION_SELL);
-        postLimitOrderWithTracking(orderId, instrumentId, price, quantity,OrderDirection.ORDER_DIRECTION_SELL);
+        String tradeIntentId = postLimitOrderWithTracking(orderId, instrumentId, price, quantity,OrderDirection.ORDER_DIRECTION_SELL);
         log.info("Продажа по стратегии: {} по цене: {} (лотов: {})", instrumentId, price, quantity);
+        return tradeIntentId;
     }
 
     /**
@@ -450,9 +456,11 @@ public class TradeExecutionService {
 
     /**
      * Отправить заявку с отслеживанием через TradeExecutionManager
+     *
+     * @return биржевой айди заявки
      */
-    public void postLimitOrderWithTracking(String orderId, String instrumentId, BigDecimal price, 
-                                           long quantity, OrderDirection direction) {
+    public String postLimitOrderWithTracking(String orderId, String instrumentId, BigDecimal price,
+                                             long quantity, OrderDirection direction) {
         var postOrderRequest = PostOrderAsyncRequest.newBuilder()
                 .setOrderId(orderId)
                 .setAccountId(tradingAccountId)
@@ -465,12 +473,15 @@ public class TradeExecutionService {
 
         log.info("Posting limit order {} for instrument {}: qty {}, direction {} @ price {}", orderId, instrumentId, quantity, direction, price);
         var order = ordersService.callSyncMethod(stub -> stub.postOrderAsync(postOrderRequest));
+        return order.getTradeIntentId();
     }
 
     /**
      * Отправить market заявку с отслеживанием через TradeExecutionManager
+     *
+     * @return биржевой айди заявки
      */
-    public void postMarketOrderWithTracking(String orderId, String instrumentId, long quantity, OrderDirection direction) {
+    public String postMarketOrderWithTracking(String orderId, String instrumentId, long quantity, OrderDirection direction) {
         var postOrderRequest = PostOrderAsyncRequest.newBuilder()
                 .setOrderId(orderId)
                 .setAccountId(tradingAccountId)
@@ -482,12 +493,13 @@ public class TradeExecutionService {
 
         log.info("Posting market order {} for instrument {}: qty {},  direction {}", orderId, instrumentId, quantity, direction);
         var order = ordersService.callSyncMethod(stub -> stub.postOrderAsync(postOrderRequest));
+        return order.getTradeIntentId();
     }
 
     /**
      * Получить статус заявки из API
      */
-    public OrderState getOrderStateFromApi(String orderId) {
+    public OrderState getOpenOrderFromApi(String orderId) {
         // Запрос всех активных заявок и поиск по orderId
         // В идеале нужно использовать метод получения конкретной заявки, 
         // но если его нет, фильтруем из списка
@@ -501,6 +513,19 @@ public class TradeExecutionService {
                 .filter(order -> order.getOrderRequestId().equals(orderId))
                 .findFirst()
                 .orElse(null);
+    }
+
+    public OrderState getOrderStateFromApi(String tradeIntentId) {
+        // Запрос всех активных заявок и поиск по orderId
+        // В идеале нужно использовать метод получения конкретной заявки,
+        // но если его нет, фильтруем из списка
+        var request = GetOrderStateRequest.newBuilder()
+                .setAccountId(tradingAccountId)
+                .setOrderId(tradeIntentId)
+                .build();
+
+        var orderStateResponse = ordersService.callSyncMethod(stub -> stub.getOrderState(request));
+        return orderStateResponse;
     }
 
     /**
