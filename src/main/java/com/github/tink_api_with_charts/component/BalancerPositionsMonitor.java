@@ -86,22 +86,18 @@ public class BalancerPositionsMonitor {
         if (availableRubValue.isPresent() || blockedRubValue.isPresent()) {
             totalRubValueOpt = Optional.of(availableRubValue.orElse(BigDecimal.ZERO)
                     .add(blockedRubValue.orElse(BigDecimal.ZERO)));
-//            balancerStateService.updateCashValue(totalRubValueOpt);
         }
 
         Optional<Long> shareQtyOpt = positionUpdate.getSecuritiesList().stream()
                 .filter(positionsSecurities -> positionsSecurities.getInstrumentUid().equals(properties.getShareUid()))
                 .findFirst()
                 .map(ps -> ps.getBalance() + ps.getBlocked());
-//        shareQtyOpt
-//                .ifPresent(balancerStateService::updateShareQty);
 
         Optional<Long> cashEtfQtyOpt = positionUpdate.getSecuritiesList().stream()
                 .filter(positionsSecurities -> positionsSecurities.getInstrumentUid().equals(properties.getCashEtfUid()))
                 .findFirst()
                 .map(ps -> ps.getBalance() + ps.getBlocked());
-//        cashEtfQtyOpt
-//                .ifPresent(balancerStateService::updateCashEtfQty);
+        log.info("Информация о позициях обновлена из стрима, вызываем сервис балансировщика");
         balancerStateService.updateFromPositionMonitor(totalRubValueOpt, shareQtyOpt, cashEtfQtyOpt);
     }
 
@@ -113,21 +109,19 @@ public class BalancerPositionsMonitor {
                 .findFirst()
                 .orElseThrow(() -> new IllegalStateException("Currency 'rub' not found between positions"));
         BigDecimal rubCash = NumberUtils.moneyValueBigDecimal(rubMoneyValue);
-//        balancerStateService.updateCashValue(rubCash);
 
         long shareQty = initialPositions.getSecuritiesList().stream()
                 .filter(positionsSecurities -> positionsSecurities.getInstrumentUid().equals(properties.getShareUid()))
                 .findFirst()
                 .map(PositionsSecurities::getBalance)
                 .orElse(0L);
-//        balancerStateService.updateShareQty(shareQty);
 
         long cashEtfQty = initialPositions.getSecuritiesList().stream()
                 .filter(positionsSecurities -> positionsSecurities.getInstrumentUid().equals(properties.getCashEtfUid()))
                 .findFirst()
                 .map(PositionsSecurities::getBalance)
                 .orElse(0L);
-//        balancerStateService.updateCashEtfQty(cashEtfQty);
+        log.info("Первичная информация о позициях получена, вызываем сервис балансировщика");
         balancerStateService.updateFromPositionInfo(rubCash, shareQty, cashEtfQty);
     }
 

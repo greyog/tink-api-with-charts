@@ -32,6 +32,7 @@ invest:
 
 trading:
   balancer:
+    canTrade: false
     accountId: "123456"
     targetShareAllocation: 0.5
     rebalanceThreshold: 0.01

@@ -8,6 +8,7 @@ import com.github.tink_api_with_charts.utils.NumberUtils;
 import jakarta.annotation.PostConstruct;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.event.EventListener;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
 import ru.tinkoff.piapi.contract.v1.AccountStatus;
 import ru.tinkoff.piapi.contract.v1.GetAccountValuesRequest;
@@ -94,33 +95,39 @@ public class BalancerAccountComponent {
 
     private void fetchPositions() {
         log.info("Обновляем информацию о позициях...");
-        PositionsResponse positions = getPositions(properties.getAccountId());
-        MoneyValue rubMoneyValue = positions.getMoneyList().stream()
-                .filter(moneyValue -> "rub".equals(moneyValue.getCurrency()))
-                .findFirst()
-                .orElseThrow(() -> new IllegalStateException("Currency 'rub' not found between positions"));
-        BigDecimal rubCash = NumberUtils.moneyValueBigDecimal(rubMoneyValue);
+        try {
+            PositionsResponse positions = getPositions(properties.getAccountId());
+            MoneyValue rubMoneyValue = positions.getMoneyList().stream()
+                    .filter(moneyValue -> "rub".equals(moneyValue.getCurrency()))
+                    .findFirst()
+                    .orElseThrow(() -> new IllegalStateException("Currency 'rub' not found between positions"));
+            BigDecimal rubCash = NumberUtils.moneyValueBigDecimal(rubMoneyValue);
 
-        long shareQty = positions.getSecuritiesList().stream()
-                .filter(positionsSecurities -> positionsSecurities.getInstrumentUid().equals(properties.getShareUid()))
-                .findFirst()
-                .map(PositionsSecurities::getBalance)
-                .orElse(0L);
+            long shareQty = positions.getSecuritiesList().stream()
+                    .filter(positionsSecurities -> positionsSecurities.getInstrumentUid().equals(properties.getShareUid()))
+                    .findFirst()
+                    .map(PositionsSecurities::getBalance)
+                    .orElse(0L);
 
-        long cashEtfQty = positions.getSecuritiesList().stream()
-                .filter(positionsSecurities -> positionsSecurities.getInstrumentUid().equals(properties.getCashEtfUid()))
-                .findFirst()
-                .map(PositionsSecurities::getBalance)
-                .orElse(0L);
+            long cashEtfQty = positions.getSecuritiesList().stream()
+                    .filter(positionsSecurities -> positionsSecurities.getInstrumentUid().equals(properties.getCashEtfUid()))
+                    .findFirst()
+                    .map(PositionsSecurities::getBalance)
+                    .orElse(0L);
 
-        balancerStateService.updateFromPositionInfo(rubCash, shareQty, cashEtfQty);
-        log.info("Информацию о позициях обновлена");
-        eventPublisher.publishEvent(new PositionInfoUpdatedEvent(this));
+//            eventPublisher.publishEvent(new PositionInfoUpdatedEvent(this));
+            log.info("Информация о позициях обновлена, вызываем сервис балансировщика");
+            balancerStateService.updateFromPositionInfo(rubCash, shareQty, cashEtfQty);
+        } catch (Exception e) {
+            log.error("Информацию о позициях НЕ обновлена. Отправляем событие для снятия блокировки. Ошибка: {}", e.getMessage());
+            eventPublisher.publishEvent(new PositionInfoUpdatedEvent(this));
+        }
     }
 
+    @Async
     @EventListener
     public void onTradeCompleted(TradeCompletedEvent event) {
-        fetchPositions();
+//        fetchPositions();
     }
 
     private void payInSandbox() {

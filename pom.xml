@@ -66,13 +66,13 @@
 		<dependency>
 			<groupId>ru.tinkoff.piapi</groupId>
 			<artifactId>java-sdk-spring-boot-starter</artifactId>
-			<version>1.49.4</version>
+			<version>1.49.1</version>
 		</dependency>
 		<!-- Для поддержки стратегий -->
 		<dependency>
 			<groupId>ru.tinkoff.piapi</groupId>
 			<artifactId>java-sdk-strategy</artifactId>
-			<version>1.49.4</version>
+			<version>1.49.1</version>
 		</dependency>
 
 		<dependency>

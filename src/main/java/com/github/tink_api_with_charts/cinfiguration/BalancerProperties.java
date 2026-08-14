@@ -7,6 +7,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @Data
 public class BalancerProperties {
 
+  private boolean canTrade;
+
   private String accountId;
 
   private double targetShareAllocation;

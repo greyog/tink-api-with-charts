@@ -1,6 +1,7 @@
 package com.github.tink_api_with_charts.service;
 
 import com.github.tink_api_with_charts.cinfiguration.BalancerProperties;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -30,11 +31,13 @@ public class BalancerStateService {
         this.balancerService = balancerService;
     }
 
+    @Async
     public void updateSharePrice(BigDecimal bid, BigDecimal ask) {
         String triggerType = "share";
         updatePricesIfNeeded(bid, ask, shareBid, shareAsk, triggerType);
     }
 
+    @Async
     public void updateCashEtfPrice(BigDecimal bid, BigDecimal ask) {
         String triggerType = "cash ETF";
         updatePricesIfNeeded(bid, ask, cashEtfBid, cashEtfAsk, triggerType);
@@ -50,41 +53,18 @@ public class BalancerStateService {
         }
         if (!equalsBid && equalsAsk) {
             oldBidRef.set(bid);
-            notifyBalancerService("%s bid".formatted(triggerType));
+            notifyBalancerService("%s bid".formatted(triggerType), false);
         } else if (equalsBid && !equalsAsk) {
             oldAskRef.set(ask);
-            notifyBalancerService("%s ask".formatted(triggerType));
+            notifyBalancerService("%s ask".formatted(triggerType), false);
         } else {
             oldBidRef.set(bid);
             oldAskRef.set(ask);
-            notifyBalancerService("%s bid ask".formatted(triggerType));
+            notifyBalancerService("%s bid ask".formatted(triggerType), false);
         }
     }
 
-    private void updateCashValue(BigDecimal newValue) {
-        BigDecimal oldValue = cashValue.get();
-        if (!Objects.equals(oldValue, newValue)) {
-            cashValue.set(newValue);
-            notifyBalancerService("cash value");
-        }
-    }
-
-    private void updateShareQty(long newQty) {
-        Long oldValue = shareQty.get();
-        if (!Objects.equals(oldValue, newQty)) {
-            shareQty.set(newQty);
-            notifyBalancerService("share qty");
-        }
-    }
-
-    private void updateCashEtfQty(long newQty) {
-        Long oldValue = cashEtfQty.get();
-        if (!Objects.equals(oldValue, newQty)) {
-            cashEtfQty.set(newQty);
-            notifyBalancerService("cash ETF Qty");
-        }
-    }
-
+    @Async
     public void updateFromPositionInfo(BigDecimal newCashValue, long newShareQty, long newCashEtfQty) {
         int updatesCount = 0;
         if (!Objects.equals(cashValue.get(), newCashValue)) {
@@ -100,10 +80,11 @@ public class BalancerStateService {
             updatesCount++;
         }
         if (updatesCount > 0) {
-            notifyBalancerService("Position update");
+            notifyBalancerService("Position update", true);
         }
     }
 
+    @Async
     public void updateFromPositionMonitor(Optional<BigDecimal> newCashValue, Optional<Long> newShareQty, Optional<Long> newCashEtfQty) {
         AtomicInteger updatesCount = new AtomicInteger();
         newCashValue
@@ -125,17 +106,18 @@ public class BalancerStateService {
                     updatesCount.getAndIncrement();
                 });
         if (updatesCount.get() > 0) {
-            notifyBalancerService("Position update");
+            notifyBalancerService("Position update", true);
         }
     }
 
-    private void notifyBalancerService(String trigger) {
+    private void notifyBalancerService(String trigger, boolean releaseLock) {
         if (stateIsOk()) {
             balancerService.handleStateChange(trigger, cashValue.get(),
                     shareQty.get(),
                     shareBid.get(),
                     cashEtfQty.get(),
-                    cashEtfBid.get());
+                    cashEtfBid.get(),
+                    releaseLock);
         }
     }
 

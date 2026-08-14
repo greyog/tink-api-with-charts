@@ -60,8 +60,8 @@ class BalancerServiceTest {
                 shareQty,
                 SHARE_PRICE,
                 CASH_ETF_QTY.longValue(), // 0
-                ETF_PRICE
-        );
+                ETF_PRICE,
+                false);
 
         // Тогда: Должно быть вызвано log.warn с текстом "Need to sell"
 //        verify(logger, times(1)).warn(anyString(), any(Long.class));
@@ -88,8 +88,8 @@ class BalancerServiceTest {
                 shareQty,
                 SHARE_PRICE,
                 cashEtfQty.longValue(),
-                ETF_PRICE
-        );
+                ETF_PRICE,
+                false);
 
         // Тогда: Должно быть вызвано log.warn с текстом "Need to buy"
 //        verify(logger, times(1)).warn(anyString(), any(Long.class));
@@ -120,8 +120,8 @@ class BalancerServiceTest {
                 shareQty,
                 sharePrice,
                 cashEtfQtyArg,
-                etfPrice
-        );
+                etfPrice,
+                false);
 
         // Тогда: log.warn НЕ должен вызываться
 //        verify(logger, never()).warn(anyString());

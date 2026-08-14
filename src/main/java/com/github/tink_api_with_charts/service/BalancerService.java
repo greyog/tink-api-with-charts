@@ -1,10 +1,14 @@
 package com.github.tink_api_with_charts.service;
 
 import com.github.tink_api_with_charts.cinfiguration.BalancerProperties;
+import com.github.tink_api_with_charts.event.ConnectionRestoredEvent;
+import org.springframework.context.event.EventListener;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -30,6 +34,8 @@ public class BalancerService {
     private final AtomicLong lastQtyToSellAtUpperAlloc = new AtomicLong(0);
     private final AtomicLong lastQtyToBuyAtLowerAlloc = new AtomicLong(0);
 
+    private static final AtomicBoolean hasMarketOrderSent = new AtomicBoolean(false);
+
     public BalancerService(BalancerProperties properties, TradeExecutionManager tradeExecutionManager) {
         this.properties = properties;
         this.tradeExecutionManager = tradeExecutionManager;
@@ -42,9 +48,11 @@ public class BalancerService {
 
     public void handleStateChange(String trigger, BigDecimal cashValue,
                                   long shareQty, BigDecimal shareBidPrice,
-                                  long cashEtfQty, BigDecimal cashEtfBidPrice) {
+                                  long cashEtfQty, BigDecimal cashEtfBidPrice,
+                                  boolean releaseLock) {
 //        log.info("BalancerService.handleStateChange. Trigger: {}, \tCashValue: {}, \tShare qty: {}, \tshare bid: {}, \tcash ETF qty: {}, \tcash ETF bid: {}",
 //                trigger, cashValue, shareQty, shareBidPrice, cashEtfQty, cashEtfBidPrice);
+        tradeExecutionManager.releaseGlobalLock(releaseLock);
         double shareValue = shareBidPrice.doubleValue() * shareQty;
         double totalCashValue = cashEtfBidPrice.doubleValue() * (cashEtfQty + properties.getIisCashEtfQty()) + cashValue.doubleValue();
         double totalValue = shareValue + totalCashValue;
@@ -52,26 +60,44 @@ public class BalancerService {
 
         // shareChange = (+-1) * (targetAlloc * (shareQty + totalCashValue / sharePrice) - shareQty))
         long targetShareQty = Math.round(targetAlloc * (shareQty + totalCashValue / shareBidPrice.doubleValue()));
-        if (shareAllocation > upperAlloc) {
+
+        if (!hasMarketOrderSent.get() && shareAllocation > upperAlloc) {
             long shareChange = shareQty - targetShareQty;
-            log.info("Price {}, \t, Share Qty {}, \tTarget alloc: {}, \tcurrent share alloc: {}. \tNeed to Sell: {} shares",
+            log.info("Trigger: {}. \tPrice {}, \t, Share Qty {}, \tTarget alloc: {}, \tcurrent share alloc: {}. \tNeed to Sell: {} shares",
+                    trigger,
                     shareBidPrice,
                     shareQty,
                     String.format("%.6f", targetAlloc),
                     String.format("%.6f", shareAllocation),
                     shareChange
             );
-            tradeExecutionManager.submitMarketSellOrder(properties.getShareUid(), shareChange);
-        } else if (shareAllocation < lowerAlloc) {
+            if (!properties.isCanTrade()) {
+                log.warn("Not allowed to trade by config");
+                return;
+            }
+            boolean orderSent = tradeExecutionManager.submitMarketSellOrder(properties.getShareUid(), shareChange);
+            if (orderSent) {
+                hasMarketOrderSent.set(true);
+            }
+        } else if (!hasMarketOrderSent.get() && shareAllocation < lowerAlloc) {
             long shareChange = targetShareQty - shareQty;
-            log.info("Price {}, \t, Share Qty {}, \tTarget alloc: {}, \tcurrent share alloc: {}. \tNeed to Buy: {} shares",
+            log.info("Trigger: {}. \tPrice {}, \t, Share Qty {}, \tTarget alloc: {}, \tcurrent share alloc: {}. \tNeed to Buy: {} shares",
+                    trigger,
                     shareBidPrice,
                     shareQty,
                     String.format("%.6f", targetAlloc),
                     String.format("%.6f", shareAllocation),
                     shareChange
             );
-//            tradeExecutionManager.submitMarketBuyOrder(properties.getShareUid(), shareChange);
+            if (!properties.isCanTrade()) {
+                log.warn("Not allowed to trade by config");
+                return;
+            }
+            boolean orderSent = tradeExecutionManager.submitMarketBuyOrder(properties.getShareUid(), shareChange);
+            if (orderSent) {
+                hasMarketOrderSent.set(true);
+            }
+
         } else {
             double sharePriceAtUpperAlloc = totalCashValue / shareQty * upperAlloc / (1 - upperAlloc);
             long qtyToSellAtUpperAlloc = Math.round(shareQty * deltaUp / upperAlloc);
@@ -99,7 +125,8 @@ public class BalancerService {
                 updateCount++;
             }
             if (updateCount > 0) {
-                log.info("Price {}, \t, Share Qty {}, \tPortfolio Value {}, \tCurrent alloc {}, \tsharePriceAtUpperAlloc {}, \tqtyToSellAtUpperAlloc {}, \tsharePriceAtLowerAlloc {}, \tqtyToBuyAtLowerAlloc {}",
+                log.info("Trigger: {}. \tPrice {}, \t, Share Qty {}, \tPortfolio Value {}, \tCurrent alloc {}, \tsharePriceAtUpperAlloc {}, \tqtyToSellAtUpperAlloc {}, \tsharePriceAtLowerAlloc {}, \tqtyToBuyAtLowerAlloc {}",
+                        trigger,
                         shareBidPrice,
                         shareQty,
                         String.format("%.2f", totalValue),
@@ -108,8 +135,19 @@ public class BalancerService {
                         qtyToSellAtUpperAlloc,
                         String.format("%.2f", sharePriceAtLowerAlloc),
                         qtyToBuyAtLowerAlloc);
-//                tradeExecutionManager.submitBalancerLimitOrders(properties.getShareUid(), lastSharePriceAtLowerAlloc.get(), lastQtyToBuyAtLowerAlloc.get(), lastSharePriceAtUpperAlloc.get(), lastQtyToSellAtUpperAlloc.get());
+                if (!properties.isCanTrade()) {
+                    log.warn("Not allowed to trade by config");
+                    return;
+                }
+                tradeExecutionManager.submitBalancerLimitOrders(properties.getShareUid(), lastSharePriceAtLowerAlloc.get(), lastQtyToBuyAtLowerAlloc.get(), lastSharePriceAtUpperAlloc.get(), lastQtyToSellAtUpperAlloc.get());
             }
         }
+    }
+
+    @Async
+    @EventListener
+    public void onConnectionRestoredEvent(ConnectionRestoredEvent event) {
+        log.debug("onConnectionRestoredEvent");
+        hasMarketOrderSent.set(false);
     }
 }
