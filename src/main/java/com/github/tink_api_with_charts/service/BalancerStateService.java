@@ -1,7 +1,10 @@
 package com.github.tink_api_with_charts.service;
 
 import com.github.tink_api_with_charts.cinfiguration.BalancerProperties;
+import com.github.tink_api_with_charts.event.StateCleanedEvent;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.scheduling.annotation.Async;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -17,6 +20,7 @@ public class BalancerStateService {
 
     private final BalancerProperties properties;
     private final BalancerService balancerService;
+    private final ApplicationEventPublisher eventPublisher;
 
     private final AtomicReference<BigDecimal> shareBid = new AtomicReference<>(null);
     private final AtomicReference<BigDecimal> shareAsk = new AtomicReference<>(null);
@@ -26,9 +30,24 @@ public class BalancerStateService {
     private final AtomicReference<Long> shareQty = new AtomicReference<>(null);
     private final AtomicReference<Long> cashEtfQty = new AtomicReference<>(null);
 
-    public BalancerStateService(BalancerProperties properties, BalancerService balancerService) {
+    public BalancerStateService(BalancerProperties properties, BalancerService balancerService, ApplicationEventPublisher eventPublisher) {
         this.properties = properties;
         this.balancerService = balancerService;
+        this.eventPublisher = eventPublisher;
+    }
+
+    @Scheduled(cron = "0 0/30 7-23 * * *", zone = "Europe/Moscow") // каждые 30 мин с 7 до 23
+    public void renewDataScheduled() {
+        log.info("Очищаем информацию о состоянии по расписанию...");
+        shareBid.set(null);
+        shareAsk.set(null);
+        shareQty.set(null);
+        cashEtfBid.set(null);
+        cashEtfAsk.set(null);
+        cashValue.set(null);
+        shareQty.set(null);
+        cashEtfQty.set(null);
+        eventPublisher.publishEvent(new StateCleanedEvent(this));
     }
 
     @Async

@@ -20,6 +20,8 @@ import ru.ttech.piapi.core.helpers.NumberMapper;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalTime;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -40,6 +42,9 @@ public class TradeExecutionManager {
 
     private static final Logger log = LoggerFactory.getLogger(TradeExecutionManager.class);
     private static final Duration DEFAULT_STALE_THRESHOLD = Duration.ofMinutes(2);
+    private static final ZoneId ZONE_ID = ZoneId.of("Europe/Moscow");
+    private static final LocalTime SESSION_START = LocalTime.of(7, 0, 0);
+    private static final LocalTime SESSION_END = LocalTime.of(23, 48, 0);
 
     private final TradeExecutionService tradeExecutionService;
     private final ApplicationEventPublisher eventPublisher;
@@ -175,6 +180,10 @@ public class TradeExecutionManager {
      * Отправить market заявку на покупку (с блокировкой инструмента)
      */
     public boolean submitMarketBuyOrder(String instrumentUid, long quantity) {
+        if (!isTradingTime()) {
+            log.warn("Market is closed");
+            return false;
+        }
         // Проверка блокировки
         if (!checkActiveLimitOrders(instrumentUid)) {
             log.warn("MarketBuyOrder Instrument {} is locked due to active limit orders", instrumentUid);
@@ -202,6 +211,10 @@ public class TradeExecutionManager {
      * Отправить market заявку на продажу (с блокировкой инструмента)
      */
     public boolean submitMarketSellOrder(String instrumentUid, long quantity) {
+        if (!isTradingTime()) {
+            log.warn("Market is closed");
+            return false;
+        }
         // Проверка блокировки
         if (!checkActiveLimitOrders(instrumentUid)) {
             log.warn("MarketSellOrder Instrument {} is locked due to active limit orders", instrumentUid);
@@ -225,7 +238,11 @@ public class TradeExecutionManager {
         return true;
     }
 
-    public void submitBalancerLimitOrders(String instrumentUid, BigDecimal priceBuy, long qtyBuy, BigDecimal priceSell, long qtySell) {
+    public synchronized void submitBalancerLimitOrders(String instrumentUid, BigDecimal priceBuy, long qtyBuy, BigDecimal priceSell, long qtySell) {
+        if (!isTradingTime()) {
+            log.warn("Market is closed");
+            return;
+        }
         if (globalLock.get()) {
             log.warn("BalancerLimitOrders Cannot submit order: waiting for position info for instrument {}", instrumentUid);
             return;
@@ -301,6 +318,13 @@ public class TradeExecutionManager {
         return true;
     }
 
+    private boolean isTradingTime() {
+        // Получаем текущее время в московском часовом поясе
+        LocalTime currentTime = LocalTime.now(ZONE_ID);
+        // Проверяем торговые сессии
+        return !currentTime.isBefore(SESSION_START) &&
+               !currentTime.isAfter(SESSION_END);
+    }
     /**
      * Получить статус заявки
      */
@@ -540,8 +564,9 @@ public class TradeExecutionManager {
 
             if (state.getRetryCount() > properties.getMaxRecoveryRetries()) {
                 // Оставляем последний известный статус, но логируем проблему
-                log.error("Order {} failed to sync after {} retries. Last known status: {}",
+                log.error("Order {} failed to sync after {} retries. Last known status: {}. Removing from active orders",
                         orderRequestId, properties.getMaxRecoveryRetries(), state.getStatus());
+                activeOrders.remove(state.getRequestId());
             }
         }
     }
@@ -551,9 +576,9 @@ public class TradeExecutionManager {
         state.incrementRetryCount();
 
         if (state.getRetryCount() > properties.getMaxRecoveryRetries()) {
-            log.error("Order {} not found after {} retries. Last known status: {}",
+            log.error("Order {} not found after {} retries. Last known status: {}. Removing from active orders",
                     state.getRequestId(), properties.getMaxRecoveryRetries(), state.getStatus());
-            // TODO: Уведомить оператора
+            activeOrders.remove(state.getRequestId());
         }
     }
 

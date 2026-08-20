@@ -61,44 +61,45 @@ public class BalancerService {
         // shareChange = (+-1) * (targetAlloc * (shareQty + totalCashValue / sharePrice) - shareQty))
         long targetShareQty = Math.round(targetAlloc * (shareQty + totalCashValue / shareBidPrice.doubleValue()));
 
-        if (!hasMarketOrderSent.get() && shareAllocation > upperAlloc) {
-            long shareChange = shareQty - targetShareQty;
-            log.info("Trigger: {}. \tPrice {}, \t, Share Qty {}, \tTarget alloc: {}, \tcurrent share alloc: {}. \tNeed to Sell: {} shares",
-                    trigger,
-                    shareBidPrice,
-                    shareQty,
-                    String.format("%.6f", targetAlloc),
-                    String.format("%.6f", shareAllocation),
-                    shareChange
-            );
-            if (!properties.isCanTrade()) {
-                log.warn("Not allowed to trade by config");
-                return;
-            }
-            boolean orderSent = tradeExecutionManager.submitMarketSellOrder(properties.getShareUid(), shareChange);
-            if (orderSent) {
-                hasMarketOrderSent.set(true);
-            }
-        } else if (!hasMarketOrderSent.get() && shareAllocation < lowerAlloc) {
-            long shareChange = targetShareQty - shareQty;
-            log.info("Trigger: {}. \tPrice {}, \t, Share Qty {}, \tTarget alloc: {}, \tcurrent share alloc: {}. \tNeed to Buy: {} shares",
-                    trigger,
-                    shareBidPrice,
-                    shareQty,
-                    String.format("%.6f", targetAlloc),
-                    String.format("%.6f", shareAllocation),
-                    shareChange
-            );
-            if (!properties.isCanTrade()) {
-                log.warn("Not allowed to trade by config");
-                return;
-            }
-            boolean orderSent = tradeExecutionManager.submitMarketBuyOrder(properties.getShareUid(), shareChange);
-            if (orderSent) {
-                hasMarketOrderSent.set(true);
-            }
-
-        } else {
+//        if (!hasMarketOrderSent.get() && shareAllocation > upperAlloc) {
+//            long shareChange = shareQty - targetShareQty;
+//            log.info("Trigger: {}. \tPrice {}, \t, Share Qty {}, \tTarget alloc: {}, \tcurrent share alloc: {}. \tNeed to Sell: {} shares",
+//                    trigger,
+//                    shareBidPrice,
+//                    shareQty,
+//                    String.format("%.6f", targetAlloc),
+//                    String.format("%.6f", shareAllocation),
+//                    shareChange
+//            );
+//            if (!properties.isCanTrade()) {
+//                log.warn("Not allowed to trade by config");
+//                return;
+//            }
+//            boolean orderSent = tradeExecutionManager.submitMarketSellOrder(properties.getShareUid(), shareChange);
+//            if (orderSent) {
+//                hasMarketOrderSent.set(true);
+//            }
+//        } else if (!hasMarketOrderSent.get() && shareAllocation < lowerAlloc) {
+//            long shareChange = targetShareQty - shareQty;
+//            log.info("Trigger: {}. \tPrice {}, \t, Share Qty {}, \tTarget alloc: {}, \tcurrent share alloc: {}. \tNeed to Buy: {} shares",
+//                    trigger,
+//                    shareBidPrice,
+//                    shareQty,
+//                    String.format("%.6f", targetAlloc),
+//                    String.format("%.6f", shareAllocation),
+//                    shareChange
+//            );
+//            if (!properties.isCanTrade()) {
+//                log.warn("Not allowed to trade by config");
+//                return;
+//            }
+//            boolean orderSent = tradeExecutionManager.submitMarketBuyOrder(properties.getShareUid(), shareChange);
+//            if (orderSent) {
+//                hasMarketOrderSent.set(true);
+//            }
+//
+//        } else
+        {
             double sharePriceAtUpperAlloc = totalCashValue / shareQty * upperAlloc / (1 - upperAlloc);
             long qtyToSellAtUpperAlloc = Math.round(shareQty * deltaUp / upperAlloc);
 

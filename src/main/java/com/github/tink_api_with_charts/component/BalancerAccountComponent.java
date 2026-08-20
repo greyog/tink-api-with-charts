@@ -2,6 +2,7 @@ package com.github.tink_api_with_charts.component;
 
 import com.github.tink_api_with_charts.cinfiguration.BalancerProperties;
 import com.github.tink_api_with_charts.event.PositionInfoUpdatedEvent;
+import com.github.tink_api_with_charts.event.StateCleanedEvent;
 import com.github.tink_api_with_charts.event.TradeCompletedEvent;
 import com.github.tink_api_with_charts.service.BalancerStateService;
 import com.github.tink_api_with_charts.utils.NumberUtils;
@@ -9,6 +10,7 @@ import jakarta.annotation.PostConstruct;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Async;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import ru.tinkoff.piapi.contract.v1.AccountStatus;
 import ru.tinkoff.piapi.contract.v1.GetAccountValuesRequest;
@@ -93,6 +95,13 @@ public class BalancerAccountComponent {
         }
     }
 
+
+    @Scheduled(cron = "0 0/5 7-23 * * *", zone = "Europe/Moscow") // каждые 5 мин с 7 до 23
+    public void fetchPositionsScheduled() {
+        log.info("Обновляем информацию о позициях по расписанию...");
+        fetchPositions();
+    }
+
     private void fetchPositions() {
         log.info("Обновляем информацию о позициях...");
         try {
@@ -128,6 +137,12 @@ public class BalancerAccountComponent {
     @EventListener
     public void onTradeCompleted(TradeCompletedEvent event) {
 //        fetchPositions();
+    }
+
+    @Async
+    @EventListener
+    public void onStateCleaned(StateCleanedEvent event) {
+        fetchPositions();
     }
 
     private void payInSandbox() {
